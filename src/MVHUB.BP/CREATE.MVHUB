@@ -1,0 +1,675 @@
+*-------------------------------------------------------
+* Cypress Business Solutions
+* P.O. Box 1637
+* Woodstock, GA 30188
+* (678) 494-9353
+* All Rights Reserved @ 2016
+* System : e-CAT
+* Date   : 12/15/2016
+*-------------------------------------------------------
+* CREATE.MVHUB HS.CUSTOMER /BUILDMAP
+*-------------------------------------------------------
+    INCLUDE MVHUB.BP MVHUB.MAP.INCLUDE
+    EQUATE NOTHING LIT '("")'
+*
+    EQUATE NAME.REMOVE LIT '@VM:"-/_"'
+    NAME.REMOVE.SPACE = SPACE(LEN(NAME.REMOVE))
+*
+    LOCATE("/BUILDMAP",SEN;BUILD.POS) THEN
+        BUILD.MAP=@TRUE
+        SEN=DELETE(SEN,BUILD.POS)
+    END ELSE
+        BUILD.MAP=@FALSE
+    END
+*
+    LOCATE("/COMPILE",SEN;BUILD.POS) THEN
+        COMPILE=@TRUE ; SEN=DELETE(SEN,BUILD.POS)
+    END ELSE
+        COMPILE=@FALSE
+    END
+*
+    LOCATE("/CATALOG",SEN;BUILD.POS) THEN
+        CATALOG=@TRUE ; SEN=DELETE(SEN,BUILD.POS)
+    END ELSE
+        CATALOG=@FALSE
+    END
+*
+    LOCATE("/VERBOSE",SEN;BUILD.POS) THEN
+        VERBOSE=@TRUE ; SEN=DELETE(SEN,BUILD.POS)
+    END ELSE
+        VERBOSE=@FALSE
+    END
+*
+    MAP.NAME=TRIM(SEN<2>) ; SOURCE.FILENAME=TRIM(SEN<3>)
+    DATA.FILENAME=TRIM(SEN<4>)
+*
+    IF SOURCE.FILENAME="" THEN SOURCE.FILENAME="MVHUB.BP"
+    IF DATA.FILENAME="" THEN DATA.FILENAME=MAP.NAME
+    MAP.NAME=UPCASE(MAP.NAME)
+*
+    OPEN "MVHUB.MAP" TO F.MAP ELSE
+        CRT 'Unable to open "MVHUB.MAP"'
+        STOP
+    END
+*
+    READ MAP.REC FROM F.MAP,MAP.NAME ELSE
+        MAP.REC="" ; BUILD.MAP=@TRUE
+    END
+    TITLE=MAP.REC<MAP$TITLE>
+*
+    MAP.VERSION=MAP.REC<MAP$MAP.VERSION>
+    IF MAP.VERSION#"" THEN
+        CVERSION=FIELD(MAP.VERSION,"_",1,3)
+        XVERSION=FIELD(MAP$VERSION.NUMBER,"_",1,3)
+        IF CVERSION#XVERSION THEN
+            CRT "Existing Map is incompatible with the version of Create MVHub"
+            CRT "  Map Version : ":MAP.VERSION
+            CRT "Build Version : ":MAP$VERSION.NUMBER
+            STOP
+        END
+    END
+*
+    IF BUILD.MAP THEN GOSUB UPDATE.MAP
+*
+    DATA.FILENAME=MAP.REC<MAP$DATA.FILENAME>
+    OPEN DATA.FILENAME TO F.DATA ELSE
+        CRT 'Unable to open Data File : "':DATA.FILENAME:'"'
+        STOP
+    END
+*
+    OPEN SOURCE.FILENAME TO F.SOURCE ELSE
+        CRT 'Unable to open source code filename: "':SOURCE.FILENAME:'"'
+        STOP
+    END
+*
+    GOSUB BUILD.HANDLER
+*
+    STOP
+*-------------------------------------------------------
+BUILD.HANDLER:
+*-------------------------------------------------------
+    HANDLER.NAME=MAP.NAME:".HANDLER.SUB"
+    SRC="SUBROUTINE ":HANDLER.NAME:"(REQUEST.HEADER,REQUEST,REPLY.HEADER,REPLY)"
+    SRC<-1>="*-------------------------------------------------------"
+    SRC<-1>="* ":TITLE
+    SRC<-1>="* Created ":TIMEDATE()
+    SRC<-1>="*-------------------------------------------------------"
+*
+    SRC<-1>='HANDLER.SUB.NAME = "':MAP.NAME:'"'
+    SRC<-1>="INCLUDE MVHUB.BP HANDLER.SUB.INCLUDE"
+*
+    IF MAP.REC<MAP$INITCODE>#"" THEN
+        SRC<-1>="* Custom Initialize Code"
+        CCODE=CHANGE(MAP.REC<MAP$INITCODE>,CHAR$LINEFEED,@VM)
+        CCODE=TRIM(CHANGE(CCODE,CHAR$RETURN,@VM),@VM)
+        SRC<-1>=RAISE(CCODE):SEPARATOR
+    END
+*
+    SRC<-1>='FILENAME="':DATA.FILENAME:'"'
+*
+    SRC<-1>='OPEN "MVHUB.LOG" TO F.WLOG THEN'
+    SRC<-1>=' WRITE REQUEST.HEADER ON F.WLOG,HANDLER.SUB.NAME:"_REQUEST_HEADER"'
+    SRC<-1>=' WRITE REQUEST ON F.WLOG,HANDLER.SUB.NAME:"_REQUEST"'
+    SRC<-1>="END":SEPARATOR
+*
+    DELIMITER=MAP.REC<MAP$DELIMITER>
+    IF DELIMITER#"" THEN SRC<-1>='EQUATE DELIMITER TO "':DELIMITER:'"'
+*
+    SRC<-1>='REPLY.STATUS="200"; REPLY.TYPE="application/json" '
+*
+    SRC<-1>="IF UDOCreate(MVHUB_OBJECT, REPLYOBJ)#MVHUB_SUCCESS THEN ABORT":SEPARATOR
+*
+    SRC<-1>="IF UDORead(REQUEST,MVHUB_FORMAT_JSON,INOBJ)#MVHUB_SUCCESS THEN"
+    SRC<-1>=" GOSUB ADD.NODE.ERROR"
+    SRC<-1>="END ELSE"
+*
+    SRC<-1>='IF UDOGetProperty(INOBJ, "action", ACTION, ACTION.TYPE)#MVHUB_SUCCESS THEN'
+    SRC<-1>=" GOSUB ADD.NODE.ERROR"
+    SRC<-1>="ACTION.TYPE = -1"
+    SRC<-1>="END":SEPARATOR
+*
+    SRC<-1>="IF ACTION.TYPE # MVHUB_STRING THEN"
+    SRC<-1>=' ERROR.CODE="900"'
+    SRC<-1>=' ERROR.MESSAGE="Action is missing or must be a string"'
+    SRC<-1>=' REPLY.STATUS="500"'
+    SRC<-1>=" GOSUB ADD.ERROR"
+    SRC<-1>="END ELSE"
+    SRC<-1>=" OPEN FILENAME TO @STDFIL ELSE"
+    SRC<-1>="  ERROR.CODE=500"
+    SRC<-1>='  ERROR.MESSAGE="Unknow Action :":ACTION'
+    SRC<-1>='  REPLY.STATUS="500"'
+    SRC<-1>="  GOSUB ADD.ERROR"
+    SRC<-1>="  RETURN"
+    SRC<-1>=" END" ; SRC<-1>="END"
+    SRC<-1>="END":SEPARATOR
+*
+    SRC<-1>='IF REPLY.STATUS="200" THEN'
+*
+    SRC<-1>=' STATUS = UDOSetProperty(REPLYOBJ, "action",OCONV(ACTION,"MCT"):"Reply")'
+    SRC<-1>=" ACTION=UPCASE(ACTION)"
+*
+    SRC<-1>="BEGIN CASE"
+    SRC<-1>='CASE ACTION="READ"'
+    SRC<-1>=" GOSUB GET.ID.RECORD"
+    SRC<-1>=" GOSUB BUILD.REPLY"
+    SRC<-1>='CASE ACTION="FROMAT"'
+    SRC<-1>=" ERROR.CODE=520"
+    SRC<-1>=' ERROR.MESSAGE="FORMAT is not allowed with this service"'
+    SRC<-1>=" GOSUB ADD.ERROR"
+    SRC<-1>=" GOSUB BUILD.REPLY"
+    SRC<-1>='CASE ACTION="WRITE"'
+    SRC<-1>=" GOSUB GET.ID.RECORD"
+    SRC<-1>=" GOSUB APPLY.UPDATE"
+    SRC<-1>=" GOSUB BUILD.REPLY"
+*
+    IF MAP.REC<MAP$CREATECODE>#"" THEN
+        SRC<-1>='CASE ACTION="CREATE"'
+        SRC<-1>=" GOSUB CREATE.ID.RECORD"
+        SRC<-1>=" GOSUB APPLY.UPDATE"
+        SRC<-1>=" GOSUB BUILD.REPLY"
+    END
+    SRC<-1>='CASE ACTION="DELETE"'
+    SRC<-1>='CASE ACTION="ERROR"          ; * Error Already Handled'
+    SRC<-1>="CASE 1"
+    SRC<-1>=" ERROR.CODE=500"
+    SRC<-1>=' ERROR.MESSAGE="Unknow Action :":ACTION'
+    SRC<-1>=" GOSUB ADD.ERROR"
+    SRC<-1>="END CASE":SEPARATOR
+*
+    SRC<-1>="IF UDOWrite(REPLYOBJ, MVHUB_FORMAT_JSON, REPLY)#MVHUB_SUCCESS THEN"
+    SRC<-1>=" REPLY.STATUS=409"
+    SRC<-1>=\REPLY='{"errors":[{"code": 409,"message":"Unable to render document"}]}'\
+    SRC<-1>="END":SEPARATOR
+*
+    SRC<-1>="END":SEPARATOR
+*
+    SRC<-1>='RELEASE':@AM:"CLOSE FILE":SEPARATOR
+*
+    SRC<-1>="RETURN"
+*
+* End of Creation Main Loop
+*
+    IF MAP.REC<MAP$CREATECODE>#"" THEN
+        SRC<-1>="*-------------------------------------------------------"
+        SRC<-1>="CREATE.ID.RECORD:"
+        SRC<-1>="*-------------------------------------------------------"
+        SRC<-1>="* Custom Create Code"
+        CCODE=CHANGE(MAP.REC<MAP$CREATECODE>,CHAR$LINEFEED,@VM)
+        CCODE=TRIM(CHANGE(CCODE,CHAR$RETURN,@VM),@VM)
+        SRC<-1>=RAISE(CCODE):SEPARATOR
+*
+        SRC<-1>="RETURN"
+    END
+*
+    SRC<-1>="*-------------------------------------------------------"
+    SRC<-1>="GET.ID.RECORD:"
+    SRC<-1>="*-------------------------------------------------------"
+    SRC<-1>='ID.REC=""'
+*
+    SRC<-1>='  IF UDOGetProperty(INOBJ, "key", KEYOBJ, KEYOBJ.TYPE)#MVHUB_SUCCESS THEN'
+    SRC<-1>="   GOSUB ADD.NODE.ERROR"
+    SRC<-1>="   KEYOBJ.TYPE = -1"
+    SRC<-1>="  END":SEPARATOR
+*
+    SRC<-1>="  IF KEYOBJ.TYPE # MVHUB_OBJECT THEN"
+    SRC<-1>="   ERROR.CODE=400"
+    SRC<-1>='   ERROR.MESSAGE="[key is missing or must be a object"'
+    SRC<-1>="   GOSUB ADD.ERROR"
+    SRC<-1>='   REPLY.STATUS="400"'
+    SRC<-1>="  END"
+*
+    CCNT=DCOUNT(MAP.REC<MAP$BASE+FLD$TYPE>,@VM)
+    LAST.ASSOC.ID="!!NEVERMATCHTHIS!!" ; CLOSE.LOOP=@FALSE
+    FOR CPOS=1 TO CCNT
+        ASSOC.ID=MAP.REC<MAP$BASE+FLD$ASSOC,CPOS>
+        WTYPE=MAP.REC<MAP$BASE+FLD$TYPE,CPOS>
+        WNAME=MAP.REC<MAP$BASE+FLD$NAME,CPOS>
+        WATTR=MAP.REC<MAP$BASE+FLD$ATTR,CPOS>
+        WVALPOS=MAP.REC<MAP$BASE+FLD$VALPOS,CPOS>+0
+        WSUBVALPOS=MAP.REC<MAP$BASE+FLD$SUBVALPOS,CPOS>+0
+        WCONV=MAP.REC<MAP$BASE+FLD$CONV,CPOS>
+*
+        IF ASSOC.ID=KEY.ASSOC THEN
+            SRC<-1>='STATUS = UDOGetProperty(KEYOBJ, "':WNAME:'", VALUE, VALUE.TYPE)'
+            SRC<-1>="IF STATUS = MVHUB_ERROR THEN"
+            SRC<-1>="STATUS = UDOGetLastError(ERROR.CODE,ERROR.MESSAGE)"
+            SRC<-1>='ERROR.MESSAGE="[':WNAME:'] ":ERROR.MESSAGE'
+            SRC<-1>="GOSUB ADD.ERROR"
+            SRC<-1>="RETURN" ; SRC<-1>="END"
+            SRC<-1>="IF VALUE.TYPE=MVHUB_STRING OR VALUE.TYPE=MVHUB_NUMBER THEN ID.REC<":CPOS:"> = VALUE":SEPARATOR
+        END
+    NEXT CPOS
+*
+    SRC<-1>="ID = ID.REC"
+    IF DELIMITER#"" THEN SRC:="; CONVERT @AM TO DELIMITER IN ID":SEPARATOR
+*
+    SRC<-1>='RECORD=""; WORK.RECORD=""':SEPARATOR
+    IF MAP.REC<MAP$READCODE>#"" THEN
+        SRC<-1>="* Custom Read Code"
+        CCODE=CHANGE(MAP.REC<MAP$READCODE>,CHAR$LINEFEED,@VM)
+        CCODE=TRIM(CHANGE(CCODE,CHAR$RETURN,@VM),@VM)
+        SRC<-1>=RAISE(CCODE):SEPARATOR
+    END ELSE
+        SRC<-1>="READU RECORD FROM FILE,ID ELSE"
+        SRC<-1>=' IF ACTION="READ" THEN'
+        SRC<-1>="  ERROR.CODE=404"
+        SRC<-1>='  ERROR.MESSAGE=ID:" not on file (':DATA.FILENAME:')"'
+        SRC<-1>="  GOSUB ADD.ERROR"
+        SRC<-1>="  RETURN"
+        SRC<-1>= "END"
+        SRC<-1>=' RECORD=""'
+        SRC<-1>="END":SEPARATOR
+    END
+*
+    SRC<-1>="RETURN"
+*
+    SRC<-1>="*-------------------------------------------------------"
+    SRC<-1>="APPLY.UPDATE:"
+    SRC<-1>="*-------------------------------------------------------"
+*
+    SRC<-1>="ID.REC=ID"
+    IF DELIMITER#"" THEN SRC:="; CONVERT DELIMITER TO @AM IN ID.REC"
+*
+    SRC<-1>='STATUS = UDOGetProperty(INOBJ, "item", ITEMOBJ, ITEMOBJ.TYPE)'
+    SRC<-1>="IF STATUS = MVHUB_ERROR THEN"
+    SRC<-1>=" STATUS = UDOGetLastError(ERROR.CODE,ERROR.MESSAGE)"
+    SRC<-1>=' ERROR.MESSAGE="[key] ":ERROR.MESSAGE'
+    SRC<-1>=" GOSUB ADD.ERROR"
+    SRC<-1>=" RETURN"
+    SRC<-1>="END":SEPARATOR
+*
+    SRC<-1>="IF ITEMOBJ.TYPE # MVHUB_OBJECT THEN"
+    SRC<-1>=" RERROR.CODE=400"
+    SRC<-1>=' ERROR.MESSAGE="[item] is missing or must be a object"'
+    SRC<-1>=" GOSUB ADD.ERROR"
+    SRC<-1>=" RETURN"
+    SRC<-1>="END":SEPARATOR
+*
+    CCNT=DCOUNT(MAP.REC<MAP$BASE+FLD$TYPE>,@VM)
+    LAST.ASSOC.ID="!!NEVERMATCHTHIS!!" ; CLOSE.LOOP=@FALSE
+    FOR CPOS=1 TO CCNT
+        ASSOC.ID=MAP.REC<MAP$BASE+FLD$ASSOC,CPOS>
+        WTYPE=MAP.REC<MAP$BASE+FLD$TYPE,CPOS>
+        WNAME=MAP.REC<MAP$BASE+FLD$NAME,CPOS>
+        WATTR=MAP.REC<MAP$BASE+FLD$ATTR,CPOS>
+        WVALPOS=MAP.REC<MAP$BASE+FLD$VALPOS,CPOS>+0
+        WSUBVALPOS=MAP.REC<MAP$BASE+FLD$SUBVALPOS,CPOS>+0
+        WCONV=MAP.REC<MAP$BASE+FLD$CONV,CPOS>
+        UBASE="@TRUE" ; IF WTYPE="W" THEN UBASE="@FALSE"
+*
+        BEGIN CASE
+            CASE ASSOC.ID=KEY.ASSOC
+            CASE ASSOC.ID=BASE.ASSOC
+                IF CLOSE.LOOP THEN
+                    SRC<-1>="REPEAT"
+                    SRC<-1>="END":SEPARATOR
+                    CLOSE.LOOP=@FALSE
+                END
+                IF LAST.ASSOC.ID#ASSOC.ID THEN
+                    SRC<-1>="UPDATEOBJ=ITEMOBJ; UPDATEOBJ.TYPE=ITEMOBJ.TYPE"
+                END
+                SRC<-1>=" UPDATE.BASE=":UBASE
+                SRC:='; UPDATE.NAME="':WNAME:'"; UPDATE.CONV="':WCONV:'"'
+                SRC<-1>="UPDATE.ATTR=":WATTR:" ; UPDATE.VALPOS=":WVALPOS:"; UPDATE.SUBVALPOS=":WSUBVALPOS
+                SRC<-1>="GOSUB UPDATE.RECORD":SEPARATOR
+            CASE 1
+*
+                IF LAST.ASSOC.ID#ASSOC.ID THEN
+                    IF CLOSE.LOOP THEN
+                        SRC<-1>="REPEAT"
+                        SRC<-1>="END":SEPARATOR
+                        CLOSE.LOOP=@FALSE
+                    END
+*
+                    LOCATE(ASSOC.ID,MAP.REC,MAP$ASSOC;APOS) ELSE
+                        CRT "Lookup Error on Assoc: ":ASSOC.ID
+                        APOS=1
+                    END
+                    ASSOC.NAME=MAP.REC<MAP$NAME,APOS> ; BASE.ATTR=MAP.REC<MAP$CTRLATTR,APOS>
+                    ASSOC.ANAME=UPCASE(ASSOC.NAME:"TABLEARY") ; ASSOC.ONAME=UPCASE(ASSOC.NAME:"OBJ")
+*
+                    SRC<-1>="*":@AM:"* Reset ":ASSOC.NAME:" Table ":SEPARATOR
+                    LN=""
+                    FOR RPOS=1 TO CCNT
+*
+                        RASSOC.ID=MAP.REC<MAP$BASE+FLD$ASSOC,RPOS>
+                        RWTYPE=MAP.REC<MAP$BASE+FLD$TYPE,RPOS>
+                        RWNAME=MAP.REC<MAP$BASE+FLD$NAME,RPOS>
+                        RWATTR=MAP.REC<MAP$BASE+FLD$ATTR,RPOS>
+                        RWVALPOS=MAP.REC<MAP$BASE+FLD$VALPOS,RPOS>+0
+                        RWSUBVALPOS=MAP.REC<MAP$BASE+FLD$SUBVALPOS,RPOS>+0
+                        RUBASE="RECORD" ; IF WTYPE="W" THEN UBASE="WORK.RECORD"
+*
+                        IF RASSOC.ID=ASSOC.ID THEN
+                            IF LN#"" THEN LN:="; "
+                            LN:=RUBASE:"<":RWATTR
+                            IF RWVALPOS#0 THEN LN:=",":RWVALPOS
+                            LN:='>=""'
+                            IF LEN(LN)>50 THEN
+                                SRC<-1>=LN ; LN=""
+                            END
+                        END
+                    NEXT RPOS
+                    IF LN#"" THEN SRC<-1>=LN
+                    SRC<-1>="*"
+*
+                    SRC<-1>='IF UDOGetProperty(ITEMOBJ,"':ASSOC.NAME:'",':ASSOC.ANAME:',CHK.TYPE)#MVHUB_SUCCESS THEN'
+                    SRC<-1>=" GOSUB ADD.NODE.ERROR"
+                    SRC<-1>="END ELSE"
+                    SRC<-1>="LOOP.POS=0"
+                    SRC<-1>="LOOP"
+                    SRC<-1>=" STATUS = UDOArrayGetNextItem(":ASSOC.ANAME:",UPDATEOBJ,UPDATEOBJ.TYPE)"
+                    SRC<-1>="UNTIL STATUS = MVHUB_ERROR DO"
+                    SRC<-1>="LOOP.POS+=1":SEPARATOR
+                    CLOSE.LOOP=@TRUE
+                END
+*
+                SRC<-1>=" UPDATE.BASE=":UBASE
+                SRC:='; UPDATE.NAME="':WNAME:'"; UPDATE.CONV="':WCONV:'"'
+                SRC<-1>=" UPDATE.ATTR=":WATTR
+                IF WVALPOS#0 THEN
+                    SRC:="; UPDATE.VALPOS=":WVALPOS:"; UPDATE.SUBVALPOS=LOOP.POS"
+                END ELSE
+                    SRC:="; UPDATE.VALPOS=LOOP.POS; UPDATE.SUBVALPOS=0"
+                END
+*
+                SRC<-1>=" GOSUB UPDATE.RECORD":SEPARATOR
+*
+        END CASE
+*
+        LAST.ASSOC.ID=ASSOC.ID
+*
+    NEXT CPOS
+*
+    IF CLOSE.LOOP THEN
+        SRC<-1>="REPEAT"
+        SRC<-1>="END":SEPARATOR
+    END
+*
+    IF MAP.REC<MAP$WRITECODE>#"" THEN
+        SRC<-1>="* Custom Write Code"
+        CCODE=CHANGE(MAP.REC<MAP$WRITECODE>,CHAR$LINEFEED,@VM)
+        CCODE=TRIM(CHANGE(CCODE,CHAR$RETURN,@VM),@VM)
+        SRC<-1>=RAISE(CCODE):SEPARATOR
+    END ELSE
+        SRC<-1>="WRITE RECORD ON FILE,ID ON ERROR"
+        SRC<-1>=" ERROR.CODE=700"
+        ýSRC<-1>=' ERROR.MESSAGE="Unable to write ":ID'
+        ýSRC<-1>=" GOSUB ADD.ERROR"
+        SRC<-1>="END"
+    END
+*
+    SRC<-1>="*":@AM:"RETURN"
+*
+    SRC<-1>="*-------------------------------------------------------"
+    SRC<-1>="UPDATE.RECORD:"
+    SRC<-1>="*-------------------------------------------------------"
+    SRC<-1>="STATUS = UDOGetProperty(UPDATEOBJ,UPDATE.NAME,CHK,CHK.TYPE)"
+    SRC<-1>="IF STATUS#MVHUB_ERROR THEN"
+    SRC<-1>='IF CHK.TYPE=MVHUB_TRUE THEN CHK="Y"'
+    SRC<-1>='IF CHK.TYPE=MVHUB_FALSE THEN CHK="N"'
+    SRC<-1>='IF UPDATE.CONV#"" THEN CHK=ICONV(CHK,UPDATE.CONV)'
+    SRC<-1>="IF UPDATE.BASE THEN"
+    SRC<-1>="RECORD<UPDATE.ATTR,UPDATE.VALPOS,UPDATE.SUBVALPOS>=CHK"
+    SRC<-1>="END ELSE"
+    SRC<-1>="WORK.RECORD<UPDATE.ATTR,UPDATE.VALPOS,UPDATE.SUBVALPOS>=CHK"
+    SRC<-1>="END" ; SRC<-1>="END"
+*
+    SRC<-1>="*":@AM:"RETURN"
+*
+    SRC<-1>="*-------------------------------------------------------"
+    SRC<-1>="BUILD.REPLY:"
+    SRC<-1>="*-------------------------------------------------------"
+    SRC<-1>="STATUS = UDOCreate(MVHUB_OBJECT, KEYOBJ)"
+    SRC<-1>='STATUS = UDOSetProperty(REPLYOBJ, "key",KEYOBJ)':SEPARATOR
+*
+    SRC<-1>="ID.REC=ID"
+    IF DELIMITER#"" THEN SRC:="; CONVERT DELIMITER TO @AM IN ID.REC"
+*
+    SRC<-1>="STATUS = UDOCreate(MVHUB_OBJECT, ITEMOBJ)"
+    SRC<-1>='STATUS = UDOSetProperty(REPLYOBJ, "item",ITEMOBJ)':SEPARATOR
+*
+    CCNT=DCOUNT(MAP.REC<MAP$BASE+FLD$TYPE>,@VM)
+    LAST.ASSOC.ID="!!NEVERMATCHTHIS!!" ; CLOSE.LOOP=@FALSE
+    FOR CPOS=1 TO CCNT
+        ASSOC.ID=MAP.REC<MAP$BASE+FLD$ASSOC,CPOS>
+        WTYPE=MAP.REC<MAP$BASE+FLD$TYPE,CPOS>
+        WNAME=MAP.REC<MAP$BASE+FLD$NAME,CPOS>
+        WATTR=MAP.REC<MAP$BASE+FLD$ATTR,CPOS>
+        WVALPOS=MAP.REC<MAP$BASE+FLD$VALPOS,CPOS>+0
+        WSUBVALPOS=MAP.REC<MAP$BASE+FLD$SUBVALPOS,CPOS>+0
+        WCONV=MAP.REC<MAP$BASE+FLD$CONV,CPOS>
+*
+        BEGIN CASE
+            CASE ASSOC.ID=KEY.ASSOC
+                SRC<-1>='STATUS = UDOSetProperty(KEYOBJ,"':WNAME:'",ID.REC<':CPOS:'>)'
+                SRC<-1>="IF STATUS = MVHUB_ERROR THEN"
+                SRC<-1>="STATUS = UDOGetLastError(ERROR.CODE,ERROR.MESSAGE)"
+                SRC<-1>='ERROR.MESSAGE="[':WNAME:'] ":ERROR.MESSAGE'
+                SRC<-1>="GOSUB ADD.ERROR"
+                SRC<-1>="RETURN" ; SRC<-1>="END":SEPARATOR
+                CLOSE.LOOP=@FALSE
+            CASE ASSOC.ID=BASE.ASSOC
+                ALN="RECORD"
+                IF WTYPE="W" THEN ALN="WORK.RECORD"
+                ALN:="<":WATTR:",":WVALPOS:",":WSUBVALPOS:">"
+                IF WCONV THEN
+                    ALN='OCONV(':ALN:',"':WCONV:'")'
+                    IF WCONV[1,2]="MD" THEN ALN=ALN:'+0'
+                END
+                SRC<-1>='IF UDOSetProperty(ITEMOBJ, "':WNAME:'",':ALN:')#MVHUB_SUCCESS THEN GOSUB ADD.NODE.ERROR'
+                CLOSE.LOOP=@FALSE
+            CASE 1
+*
+                IF LAST.ASSOC.ID#ASSOC.ID THEN
+                    IF CLOSE.LOOP THEN
+                        SRC<-1>="END":@AM:"END"
+                        SRC<-1>="NEXT LOOP.POS":SEPARATOR
+                    END
+*
+                    LOCATE(ASSOC.ID,MAP.REC,MAP$ASSOC;APOS) ELSE
+                        CRT "Lookup Error on Assoc: ":ASSOC.ID
+                        APOS=1
+                    END
+                    ASSOC.NAME=MAP.REC<MAP$NAME,APOS> ; BASE.ATTR=MAP.REC<MAP$CTRLATTR,APOS>
+                    ASSOC.ANAME=UPCASE(ASSOC.NAME:"TABLEARY") ; ASSOC.ONAME=UPCASE(ASSOC.NAME:"OBJ")
+*
+                    SRC<-1>="*":@AM:"* Table for ":ASSOC.NAME:SEPARATOR
+*
+                    SRC<-1>="STATUS = UDOCreate(MVHUB_ARRAY,":ASSOC.ANAME:")"
+                    SRC<-1>='STATUS = UDOSetProperty(ITEMOBJ,"':ASSOC.NAME:'",':ASSOC.ANAME:')'
+                    SRC<-1>="LOOP.CNT=DCOUNT(RECORD<":BASE.ATTR:">,@VM)"
+                    SRC<-1>="FOR LOOP.POS=1 TO LOOP.CNT"
+*
+                    SRC<-1>="IF UDOCreate(MVHUB_OBJECT,":ASSOC.ONAME:")#MVHUB_SUCCESS THEN"
+                    SRC<-1>=" GOSUB ADD.NODE.ERROR"
+                    SRC<-1>="END ELSE"
+                    SRC<-1>=" IF UDOArrayAppendItem(":ASSOC.ANAME:",":ASSOC.ONAME:")#MVHUB_SUCCESS THEN"
+                    SRC<-1>="  GOSUB ADD.NODE.ERROR"
+                    SRC<-1>=" END ELSE" ; CLOSE.LOOP=@TRUE
+                END
+*
+                ALN="RECORD"
+                IF WTYPE="W" THEN ALN="WORK.RECORD"
+                ALN:="<":WATTR:",LOOP.POS>"
+                IF WCONV THEN
+                    ALN='OCONV(':ALN:',"':WCONV:'")'
+                    IF WCONV[1,2]="MD" THEN ALN=ALN:'+0'
+                END
+                SRC<-1>='IF UDOSetProperty(':ASSOC.ONAME:',"':WNAME:'",':ALN:')#MVHUB_SUCCESS THEN GOSUB ADD.NODE.ERROR'
+*
+        END CASE
+*
+        LAST.ASSOC.ID=ASSOC.ID
+*
+    NEXT CPOS
+*
+    IF CLOSE.LOOP THEN
+        SRC<-1>="END":@AM:"END"
+        SRC<-1>="NEXT LOOP.POS":SEPARATOR
+    END
+*
+    SRC<-1>="*":@AM:"RETURN"
+*
+    WRITE SRC ON F.SOURCE,HANDLER.NAME
+    CRT "Source Code written to ":SOURCE.FILENAME:"/":HANDLER.NAME
+*
+    STMT="FORMAT ":SOURCE.FILENAME:" ":HANDLER.NAME
+    EXECUTE STMT CAPTURING OUTPUT
+*
+    IF COMPILE THEN
+        STMT="BASIC ":SOURCE.FILENAME:" ":HANDLER.NAME
+        EXECUTE STMT
+    END
+*
+    IF CATALOG THEN
+        STMT="CATALOG ":SOURCE.FILENAME:" ":HANDLER.NAME
+        EXECUTE STMT
+    END
+*
+    RETURN
+*-------------------------------------------------------
+UPDATE.MAP:
+*-------------------------------------------------------
+    CRT "Updating MAP Record for File : ":DATA.FILENAME
+    OPEN "DICT",DATA.FILENAME TO FD.DATA ELSE
+        CRT 'Unable to open Dictionary for "':DATA.FILENAME:'"'
+        STOP
+    END
+*
+    IF TITLE="" THEN
+        TITLE=DATA.FILENAME ; CONVERT "." TO " " IN TITLE
+        TITLE="MVHub for ":OCONV(TITLE,"MCT")
+        MAP.REC<MAP$TITLE>=TITLE
+    END
+    TITLE=MAP.REC<MAP$TITLE>
+    MAP.REC<MAP$DATA.FILENAME>=DATA.FILENAME
+    MAP.REC<MAP$MAP.VERSION>=MAP$VERSION.NUMBER
+    MAP.REC<MAP$SOURCEFILE>=SOURCE.FILENAME
+*
+    WK.MAP=""
+    FOR ATTR=1 TO MAP$BASE
+        WK.MAP<ATTR>=MAP.REC<ATTR>
+    NEXT ATTR
+*
+    WK.MAP<MAP$ASSOC>=KEY.ASSOC:@VM:BASE.ASSOC
+    WK.MAP<MAP$DESCRIPTION>=KEY.ASSOC.DESC:@VM:BASE.ASSOC.DESC
+*
+    SELECTV FD.DATA TO WORKLIST ; DONE=@FALSE
+    LOOP
+        READNEXT DICT.ID FROM WORKLIST ELSE DONE=@TRUE
+    UNTIL DONE DO
+        READ DICT.REC FROM FD.DATA,DICT.ID THEN
+            DTYPE=TRIM(DICT.REC<1>)[1,1]
+            BEGIN CASE
+                CASE DTYPE="D"
+                    IF VERBOSE THEN CRT "Adding ":DICT.ID:" to Map"
+                    GOSUB PROCESS.DATA.DICT
+                CASE 1
+                    IF VERBOSE THEN CRT "Skipping ":DICT.ID:" type of ":DTYPE
+            END CASE
+        END
+    REPEAT
+*
+    MAP.REC=""
+    FOR ATTR=1 TO MAP$BASE
+        MAP.REC<ATTR>=WK.MAP<ATTR>
+    NEXT ATTR
+*
+    ACNT=DCOUNT(WK.MAP<MAP$ASSOC>,@VM) ; NCPOS=0
+    FOR APOS=1 TO ACNT
+        ADD.BASE=((APOS-1)*FLD$OFFSET)+MAP$BASE
+        CCNT=DCOUNT(WK.MAP<ADD.BASE+FLD$TYPE>,@VM)
+        FOR CPOS=1 TO CCNT
+            NCPOS+=1
+            FOR FPOS=1 TO FLD$OFFSET
+                MAP.REC<MAP$BASE+FPOS,NCPOS>=WK.MAP<ADD.BASE+FPOS,CPOS>
+            NEXT FPOS
+        NEXT CPOS
+    NEXT APOS
+*
+    WRITE MAP.REC ON F.MAP,MAP.NAME
+*
+    RETURN
+*-------------------------------------------------------
+PROCESS.DATA.DICT:
+*-------------------------------------------------------
+    ATTR=DICT.REC<2>+0 ; READONLY=@FALSE
+    ASSOC.NAME=DICT.REC<7>
+    IF ASSOC.NAME[1,6]="TABLE-" THEN ASSOC.NAME=ASSOC.NAME[7,LEN(ASSOC.NAME)]
+    IF DICT.REC<6>="M" AND ASSOC.NAME="" THEN ASSOC.NAME="ASSOC":ATTR"R%5"
+    IF ASSOC.NAME="" THEN ASSOC.NAME=BASE.ASSOC
+    IF ATTR=0 THEN ASSOC.NAME=KEY.ASSOC
+*
+    LOCATE(ASSOC.NAME,WK.MAP,MAP$ASSOC;APOS) ELSE
+        APOS=DCOUNT(WK.MAP<MAP$ASSOC>,@VM)+1
+        WK.MAP<MAP$ASSOC,APOS>=ASSOC.NAME
+        WORK.NAME=ASSOC.NAME ; GOSUB BLD.JSON.NAME
+        WK.MAP<MAP$NAME,APOS>=JSON.NAME
+        WORK.NAME=ASSOC.NAME ; CONVERT "._-" TO "   " IN WORK.NAME
+        WK.MAP<MAP$DESCRIPTION,APOS>=OCONV(TRIM(WORK.NAME),"MCT")
+        WK.MAP<MAP$CTRLATTR,APOS>=ATTR
+    END
+*
+    ADD.BASE=((APOS-1)*FLD$OFFSET)+MAP$BASE
+*
+    LOCATE(ATTR,WK.MAP,ADD.BASE+FLD$ATTR;CPOS;"AR") THEN RETURN
+    FOR I=1 TO FLD$OFFSET-1
+        WK.MAP=INSERT(WK.MAP,ADD.BASE+I,CPOS;"")
+    NEXT I
+*
+    WK.MAP<ADD.BASE+FLD$TYPE,CPOS>=DTYPE
+*
+    WORK.NAME=DICT.REC<4>
+    IF WORK.NAME="" THEN WORK.NAME=DICT.ID
+    GOSUB BLD.JSON.NAME
+*
+    WK.MAP<ADD.BASE+FLD$NAME,CPOS>=JSON.NAME
+    WK.MAP<ADD.BASE+FLD$ASSOC,CPOS>=ASSOC.NAME
+*
+    WK.MAP<ADD.BASE+FLD$ATTR,CPOS>=ATTR
+*
+    CONV=DICT.REC<3> ; GOSUB NORMALIZE.CONV
+    WK.MAP<ADD.BASE+FLD$CONV,CPOS>=CONV
+*
+    LENGTH=DICT.REC<5> ; CONVERT "TLR" TO "" IN LENGTH
+    WK.MAP<ADD.BASE+FLD$LENGTH,CPOS>=LENGTH
+*
+    WK.MAP<ADD.BASE+FLD$READONLY,CPOS>=READONLY
+*
+    RETURN
+*-------------------------------------------------------
+NORMALIZE.CONV:
+*-------------------------------------------------------
+    BEGIN CASE
+        CASE CONV[1,1]="M"
+            CONVERT ",$" TO "" IN CONV
+        CASE CONV[1,1]="P"
+            CONV=""
+    END CASE
+*
+    RETURN
+*-------------------------------------------------------
+BLD.JSON.NAME:
+*-------------------------------------------------------
+    CONVERT NAME.REMOVE TO NAME.REMOVE.SPACE IN WORK.NAME
+    WORK.NAME=TRIM(WORK.NAME)
+*
+    JSON.NAME="" ; UPCASEIT=@FALSE
+    WLEN=LEN(WORK.NAME)
+    FOR WPOS=1 TO WLEN
+        WC=WORK.NAME[WPOS,1]
+        BEGIN CASE
+            CASE WC=" "
+                UPCASEIT=@TRUE
+            CASE NOT(ALPHA(WC))
+                IF NUM(WC) AND JSON.NAME#"" THEN JSON.NAME:=WC
+            CASE UPCASEIT
+                JSON.NAME:=UPCASE(WC)
+                UPCASEIT=@FALSE
+            CASE 1
+                JSON.NAME:=DOWNCASE(WC)
+        END CASE
+    NEXT WPOS
+*
+    RETURN

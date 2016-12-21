@@ -1,0 +1,204 @@
+*-------------------------------------------------------
+* Cypress Business Solutions
+* P.O. Box 1637
+* Woodstock, GA 30188
+* (678) 494-9353
+* All Rights Reserved @ 2010
+* System : e-CAT
+* Date   : 08/24/2010
+*-------------------------------------------------------
+* Standard/Required Subroutine Define:
+* {SERVICE}.HANDLER.SUB(REQUEST.HEADER,REQUEST,REPLY.HEADER,REPLY)
+* {SERVICE} is the name of the uri for service
+*
+* Record Layouts
+*
+* REQUEST.HEADER:
+*
+* Attr Description
+* ---- --------------------------------------------------
+*    1 Url
+*    2 Action
+*    3 Content Type
+*    4 Encoding
+*    5 Base URL
+*    6 Support URL
+*    7 Referrer URL
+*
+*   10 Is Secure Connection
+*   11 User Host Address
+*   12 User Host Name
+*   13 User Agent
+*   14 Is Authenticated
+*   15 Authenication User
+*   16 Authenication Password
+*   17 Authenication Domain
+*
+*   21 HTTP Header Name
+*   22 HTTP Header Value
+*
+*   29 XML Flattend (when Action: PROPFIND or "text/xml")
+*
+*   30 JSON Flattened (when Content:application/json)
+*
+*   31 Field Name
+*   32 Field Value
+*   33 Field Method (Q - Query String, P - Form Post)
+*   34 Content Type (Default: form-data)
+*
+*   35 BASE64 Encode Data (File)
+*
+*   41 Cookies Name
+*   42 Cookies Domain
+*   43 Cookies Path
+*   44 Cookies Value
+*   45 Cookies Time Stamp
+*
+* REPLY.HEADER:
+*
+* Attr Description
+* ---- --------------------------------------------------
+*    1 Status (200,404,500) - REPLY.STATUS
+*    2 Content Location (Used on HEAD Method)
+*    3 Content Type - REPLY.TYPE
+*    5 Response Header Name
+*    6 Response Header Value
+*   10 Options (Allow)
+*   11 Options (Public)
+*-------------------------------------------------------
+* MVHUB Status codes:
+    EQUýMVHUB_SUCCESSýýTO 0
+    EQUýMVHUB_ERRORýýýTO -1
+    EQUýMVHUB_INVALIDHANDLE TO -2
+*
+* MVHUB value types:
+    EQUýMVHUB_FALSEýýýTO 0
+    EQUýMVHUB_TRUEýýýTO 1
+    EQUýMVHUB_NULL ýýýTO 2
+    EQUýMVHUB_NUMBERýýTO 3
+    EQUýMVHUB_STRINGýýTO 4
+    EQUýMVHUB_ARRAYýýýTO 5
+    EQUýMVHUB_OBJECTýýTO 6
+*
+    EQU MVHUB_FORMAT_JSON TO 0
+*
+    EQU ID LIT "@ID"
+    EQU RECORD LIT "@RECORD"
+    EQU FILENAME LIT "@FILENAME"
+    EQU FILE LIT "@STDFIL"
+*
+    EQU WORK.RECORD LIT "@USER0"
+    EQU VALUE LIT "@USER1"
+    EQU MEMORY LIT "@USER2"
+*
+    CALL !USER.TYPE(UTYPE,UADMIN)
+*
+    IF UNASSIGNED(REQUEST.HEADER) THEN REQUEST.HEADER=""
+    IF UNASSIGNED(REQUEST) THEN REQUEST=""
+*
+    ACTION=OCONV(REQUEST.HEADER<2>,"MCU")
+*
+    IF REQUEST.HEADER<29>#"" THEN
+        PARSED.XML=RAISE(REQUEST.HEADER<29>)
+    END ELSE
+        PARSED.XML=""
+    END
+*
+    IF REQUEST.HEADER<30>#"" THEN
+        PARSED.JSON=RAISE(REQUEST.HEADER<30>)
+    END ELSE
+        PARSED.JSON=""
+    END
+*
+    TERM.INFO="WEBHANDLER" ; TERM.LOCATION="WEB" ; TERM.DRIVER="WEB"
+*
+    HEADER.TAB=OCONV(REQUEST.HEADER<21>,"MCU")
+    HEADER.TAB<2>=REQUEST.HEADER<21>
+    HEADER.TAB<3>=REQUEST.HEADER<22>
+*
+    POST.TAB=OCONV(REQUEST.HEADER<31>,"MCU")
+    CONVERT '"' TO "" IN POST.TAB        ; * Temp to Corrected
+    POST.TAB<2>=REQUEST.HEADER<31>
+    POST.TAB<3>=REQUEST.HEADER<32>
+    POST.TAB<4>=REQUEST.HEADER<33>
+    POST.TAB<5>=REQUEST.HEADER<34>
+    POST.TAB<6>=REQUEST.HEADER<35>
+*
+    COOKIE.TAB=OCONV(REQUEST.HEADER<41>,"MCU")
+    CONVERT '"' TO "" IN COOKIE.TAB      ; * Temp to Correct
+    COOKIE.TAB<2>=REQUEST.HEADER<41>     ; * Cookies Name
+    COOKIE.TAB<3>=REQUEST.HEADER<44>     ; * Cookies Value
+*
+    IF NOT(ASSIGNED(REQUEST.HEADER)) THEN REQUEST.HEADER=""
+    IF NOT(ASSIGNED(REQUEST)) THEN REQUEST=""
+    IF NOT(ASSIGNED(BASE.URL)) THEN BASE.URL=""
+    REPLY.HEADER="" ; REPLY="" ; SCRIPT.FLAGS=""
+*
+    EQU REPLY.STATUS LIT "REPLY.HEADER<1>"
+    EQU REPLY.TYPE LIT "REPLY.HEADER<3>"
+*
+    REPLY.TYPE="text/plain" ; REPLY.STATUS=200
+*
+    STATUS=XMLSetOptions("out-newline=LF")
+*
+* Set Is Secure Connection Flags
+*
+    IS.SECURE=OCONV(REQUEST.HEADER<10>[1,1],"MCU")
+    IF IS.SECURE="T" THEN
+        IS.SECURE=1
+        DEFAULT.HTTP="https://"
+    END ELSE
+        IS.SECURE=0
+        DEFAULT.HTTP="http://"
+    END
+*
+* Set Url and Build URL Table
+*
+    URL=REQUEST.HEADER<1> ; URL.TABLE=TRIM(URL,"/","L") ; 
+    CONVERT "/" TO @AM IN URL.TABLE ; URL.CNT=DCOUNT(URL.TABLE,@AM)
+    IF UNASSIGNED(HANDLER.SUB.NAME) THEN HANDLER.SUB.NAME=URL.TABLE<URL.CNT>
+    LOOP.DONE=0 ; BASE.URL="/"
+    FOR X=1 TO URL.CNT UNTIL LOOP.DONE=1
+        SEG=OCONV(URL.TABLE<1>,"MCU")
+        BASE.URL:=URL.TABLE<1>:"/"
+        IF SEG=HANDLER.SUB.NAME THEN LOOP.DONE=1
+        URL.TABLE=DELETE(URL.TABLE,1)
+    NEXT X
+*
+    REQUEST.BASE.URL = REQUEST.HEADER<5>
+    IF REQUEST.BASE.URL = "" THEN REQUEST.BASE.URL="/"
+*
+    REQUEST.SUPPORT.URL = TRIM(REQUEST.HEADER<6>)
+    IF REQUEST.SUPPORT.URL = "" THEN REQUEST.SUPPORT.URL="/"
+*
+    GOTO HANDLER.SUB.INCLUDE.END
+*-------------------------------------------------------
+ADD.NODE.ERROR:
+*-------------------------------------------------------
+    STATUS = UDOGetLastError(ERROR.CODE,ERROR.MESSAGE)
+    REPLY.STATUS="500"
+*-------------------------------------------------------
+ADD.ERROR:
+*-------------------------------------------------------
+    ACTION="ERROR"
+    IF UNASSIGNED(REPLYOBJ) THEN STATUS = UDOCreate(MVHUB_OBJECT, REPLYOBJ)
+    IF ERROR.CODE<100 THEN ERROR.CODE+=1000
+    IF UNASSIGNED(ERROR.MESSAGE) THEN ERROR.MESSAGE="Undefined Error"
+    ERRORSOBJ="" ; ERRORSOBJ.TYPE=""
+    STATUS = UDOGetProperty(REPLYOBJ, "errors", ERRORSOBJ, ERRORSOBJ.TYPE)
+    IF STATUS#MVHUB_SUCCESS OR ERRORSOBJ.TYPE#MVHUB_ARRAY THEN INIT.ERROR=@TRUE ELSE INIT.ERROR=@FALSE
+*
+    IF INIT.ERROR THEN
+        STATUS = UDOCreate(MVHUB_ARRAY, ERRORSOBJ)           ; * Create new ERROROBJ [750]
+        STATUS = UDOSetProperty(REPLYOBJ, "errors",ERRORSOBJ)
+    END
+*
+    STATUS=UDOCreate(MVHUB_OBJECT, ERROROBJ)
+    STATUS = UDOArrayAppendItem(ERRORSOBJ,ERROROBJ)
+    STATUS = UDOSetProperty(ERROROBJ,"code",ERROR.CODE)
+    STATUS = UDOSetProperty(ERROROBJ,"message",ERROR.MESSAGE)
+*
+    RETURN
+*-------------------------------------------------------
+HANDLER.SUB.INCLUDE.END:
+*-------------------------------------------------------

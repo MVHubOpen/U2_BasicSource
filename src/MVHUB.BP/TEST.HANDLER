@@ -1,0 +1,37 @@
+*-------------------------------------------------------
+* Cypress Business Solutions
+* P.O. Box 1637
+* Woodstock, GA 30188
+* (678) 494-9353
+* All Rights Reserved @ 2016
+* System : e-CAT
+* Date   : 12/21/2016
+*-------------------------------------------------------
+    INCLUDE MVHUB.BP MVHUB.MAP.INCLUDE
+    OPEN "MVHUB.LOG" TO F.MAPLOG ELSE ABORT 201,"MVHUB.LOG"
+*
+    HANDLER.ID=SEN<2>
+*
+    READ REQUEST.HEADER FROM F.MAPLOG,HANDLER.ID:"_REQUEST_HEADER" THEN
+        CRT "No Test Header available for ":HANDLER.ID
+    END
+*
+    READ REQUEST FROM F.MAPLOG,HANDLER.ID:"_REQUEST" THEN
+        CRT "No Test Request available for ":HANDLER.ID
+    END
+*
+    SUBNAME=HANDLER.ID:".HANDLER.SUB"
+    CALL @SUBNAME(REQUEST.HEADER,REQUEST,REPLY.HEADER,REPLY)
+*
+    CRT "Reply Header:"
+    ATTR.CNT=DCOUNT(REPLY.HEADER,@AM)
+    FOR ATTR=1 TO ATTR.CNT
+        CRT ATTR"R%2":" : ":REPLY.HEADER
+    NEXT ATTR
+*
+    CRT "Reply:"
+    ATTR.CNT=DCOUNT(REPLY,@AM)
+    FOR ATTR=1 TO ATTR.CNT
+        CRT REPLY<ATTR>
+    NEXT ATTR
+*
