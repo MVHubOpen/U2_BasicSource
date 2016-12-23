@@ -1,0 +1,311 @@
+      SUBROUTINE HS.CUSTOMER.HANDLER.SUB(REQUEST.HEADER,REQUEST,REPLY.HEADER,REPLY)
+*-------------------------------------------------------
+* MVHub for Hs Customer
+* Created 17:12:38 23 DEC 2016
+*-------------------------------------------------------
+      HANDLER.SUB.NAME = "HS.CUSTOMER"
+      INCLUDE MVHUB.BP HANDLER.SUB.INCLUDE
+      FILENAME="HS.CUSTOMER"
+      OPEN "MVHUB.LOG" TO F.WLOG THEN
+         WRITE REQUEST.HEADER ON F.WLOG,HANDLER.SUB.NAME:"_REQUEST_HEADER"
+         WRITE REQUEST ON F.WLOG,HANDLER.SUB.NAME:"_REQUEST"
+      END
+*
+      REPLY.STATUS="200" ; REPLY.TYPE="application/json"
+      IF UDOCreate(MVHUB_OBJECT, REPLYOBJ)#MVHUB_SUCCESS THEN ABORT
+*
+      IF UDORead(REQUEST,MVHUB_FORMAT_JSON,INOBJ)#MVHUB_SUCCESS THEN
+         GOSUB ADD.NODE.ERROR
+      END ELSE
+         IF UDOGetProperty(INOBJ, "action", ACTION, ACTION.TYPE)#MVHUB_SUCCESS THEN
+            GOSUB ADD.NODE.ERROR
+            ACTION.TYPE = -1
+         END
+*
+         IF ACTION.TYPE # MVHUB_STRING THEN
+            ERROR.CODE="900"
+            ERROR.MESSAGE="Action is missing or must be a string"
+            REPLY.STATUS="500"
+            GOSUB ADD.ERROR
+         END ELSE
+            OPEN FILENAME TO @STDFIL ELSE
+               ERROR.CODE=500
+               ERROR.MESSAGE="Unknow Action :":ACTION
+               REPLY.STATUS="500"
+               GOSUB ADD.ERROR
+               RETURN
+            END
+         END
+      END
+*
+      IF REPLY.STATUS="200" THEN
+         STATUS = UDOSetProperty(REPLYOBJ, "action",OCONV(ACTION,"MCT"):"Reply")
+         ACTION=UPCASE(ACTION)
+         BEGIN CASE
+            CASE ACTION="READ"
+               GOSUB GET.ID.RECORD
+               GOSUB BUILD.REPLY
+            CASE ACTION="FROMAT"
+               ERROR.CODE=520
+               ERROR.MESSAGE="FORMAT is not allowed with this service"
+               GOSUB ADD.ERROR
+               GOSUB BUILD.REPLY
+            CASE ACTION="UPDATE"
+               GOSUB GET.ID.RECORD
+               GOSUB APPLY.UPDATE
+               GOSUB BUILD.REPLY
+            CASE ACTION="DELETE"
+            CASE ACTION="LIST"
+               GOSUB BUILD.REPLY
+            CASE ACTION="ERROR"          ; * Error Already Handled
+            CASE 1
+               ERROR.CODE=500
+               ERROR.MESSAGE="Unknow Action :":ACTION
+               GOSUB ADD.ERROR
+         END CASE
+*
+         IF UDOWrite(REPLYOBJ, MVHUB_FORMAT_JSON, REPLY)#MVHUB_SUCCESS THEN
+            REPLY.STATUS=409
+            REPLY='{"errors":[{"code": 409,"message":"Unable to render document"}]}'
+         END
+*
+      END
+*
+      RELEASE
+      CLOSE FILE
+*
+      RETURN
+*-------------------------------------------------------
+GET.ID.RECORD:
+*-------------------------------------------------------
+      ID.REC=""
+      IF UDOGetProperty(INOBJ, "key", KEYOBJ, KEYOBJ.TYPE)#MVHUB_SUCCESS THEN
+         GOSUB ADD.NODE.ERROR
+         KEYOBJ.TYPE = -1
+      END
+*
+      IF KEYOBJ.TYPE # MVHUB_OBJECT THEN
+         ERROR.CODE=400
+         ERROR.MESSAGE="[key is missing or must be a object"
+         GOSUB ADD.ERROR
+         REPLY.STATUS="400"
+      END
+      STATUS = UDOGetProperty(KEYOBJ, "customerId", VALUE, VALUE.TYPE)
+      IF STATUS = MVHUB_ERROR THEN
+         STATUS = UDOGetLastError(ERROR.CODE,ERROR.MESSAGE)
+         ERROR.MESSAGE="[customerId] ":ERROR.MESSAGE
+         GOSUB ADD.ERROR
+         RETURN
+      END
+      IF VALUE.TYPE=MVHUB_STRING OR VALUE.TYPE=MVHUB_NUMBER THEN ID.REC<1> = VALUE
+*
+      ID = ID.REC
+      RECORD="" ; WORK.RECORD=""
+*
+      READU RECORD FROM FILE,ID ELSE
+         IF ACTION="READ" THEN
+            ERROR.CODE=404
+            ERROR.MESSAGE=ID:" not on file (HS.CUSTOMER)"
+            GOSUB ADD.ERROR
+            RETURN
+         END
+         RECORD=""
+      END
+*
+      RETURN
+*-------------------------------------------------------
+APPLY.UPDATE:
+*-------------------------------------------------------
+      ID.REC=ID
+      STATUS = UDOGetProperty(INOBJ, "item", ITEMOBJ, ITEMOBJ.TYPE)
+      IF STATUS = MVHUB_ERROR THEN
+         STATUS = UDOGetLastError(ERROR.CODE,ERROR.MESSAGE)
+         ERROR.MESSAGE="[key] ":ERROR.MESSAGE
+         GOSUB ADD.ERROR
+         RETURN
+      END
+*
+      IF ITEMOBJ.TYPE # MVHUB_OBJECT THEN
+         RERROR.CODE=400
+         ERROR.MESSAGE="[item] is missing or must be a object"
+         GOSUB ADD.ERROR
+         RETURN
+      END
+*
+      UPDATEOBJ=ITEMOBJ ; UPDATEOBJ.TYPE=ITEMOBJ.TYPE
+      UPDATE.BASE=@TRUE ; UPDATE.NAME="salutation" ; UPDATE.CONV=""
+      UPDATE.ATTR=1 ; UPDATE.VALPOS=0 ; UPDATE.SUBVALPOS=0
+      GOSUB UPDATE.RECORD
+*
+      UPDATE.BASE=@TRUE ; UPDATE.NAME="firstName" ; UPDATE.CONV=""
+      UPDATE.ATTR=2 ; UPDATE.VALPOS=0 ; UPDATE.SUBVALPOS=0
+      GOSUB UPDATE.RECORD
+*
+      UPDATE.BASE=@TRUE ; UPDATE.NAME="lastName" ; UPDATE.CONV=""
+      UPDATE.ATTR=3 ; UPDATE.VALPOS=0 ; UPDATE.SUBVALPOS=0
+      GOSUB UPDATE.RECORD
+*
+      UPDATE.BASE=@TRUE ; UPDATE.NAME="companyName" ; UPDATE.CONV=""
+      UPDATE.ATTR=4 ; UPDATE.VALPOS=0 ; UPDATE.SUBVALPOS=0
+      GOSUB UPDATE.RECORD
+*
+      UPDATE.BASE=@TRUE ; UPDATE.NAME="addressLine1" ; UPDATE.CONV=""
+      UPDATE.ATTR=5 ; UPDATE.VALPOS=0 ; UPDATE.SUBVALPOS=0
+      GOSUB UPDATE.RECORD
+*
+      UPDATE.BASE=@TRUE ; UPDATE.NAME="addressLine2" ; UPDATE.CONV=""
+      UPDATE.ATTR=6 ; UPDATE.VALPOS=0 ; UPDATE.SUBVALPOS=0
+      GOSUB UPDATE.RECORD
+*
+      UPDATE.BASE=@TRUE ; UPDATE.NAME="city" ; UPDATE.CONV=""
+      UPDATE.ATTR=7 ; UPDATE.VALPOS=0 ; UPDATE.SUBVALPOS=0
+      GOSUB UPDATE.RECORD
+*
+      UPDATE.BASE=@TRUE ; UPDATE.NAME="state" ; UPDATE.CONV=""
+      UPDATE.ATTR=8 ; UPDATE.VALPOS=0 ; UPDATE.SUBVALPOS=0
+      GOSUB UPDATE.RECORD
+*
+      UPDATE.BASE=@TRUE ; UPDATE.NAME="zip" ; UPDATE.CONV=""
+      UPDATE.ATTR=9 ; UPDATE.VALPOS=0 ; UPDATE.SUBVALPOS=0
+      GOSUB UPDATE.RECORD
+*
+      UPDATE.BASE=@TRUE ; UPDATE.NAME="telephone" ; UPDATE.CONV=""
+      UPDATE.ATTR=10 ; UPDATE.VALPOS=0 ; UPDATE.SUBVALPOS=0
+      GOSUB UPDATE.RECORD
+*
+*
+* Reset orders Table
+*
+      RECORD<11>="" ; RECORD<12>="" ; RECORD<13>="" ; RECORD<14>=""
+      RECORD<15>="" ; RECORD<16>="" ; RECORD<17>="" ; RECORD<18>=""
+      RECORD<19>=""
+*
+      IF UDOGetProperty(ITEMOBJ,"orders",ORDERSTABLEARY,CHK.TYPE)#MVHUB_SUCCESS THEN
+         GOSUB ADD.NODE.ERROR
+      END ELSE
+         LOOP.POS=0
+         LOOP
+            STATUS = UDOArrayGetNextItem(ORDERSTABLEARY,UPDATEOBJ,UPDATEOBJ.TYPE)
+         UNTIL STATUS = MVHUB_ERROR DO
+            LOOP.POS+=1
+*
+            UPDATE.BASE=@TRUE ; UPDATE.NAME="product" ; UPDATE.CONV=""
+            UPDATE.ATTR=11 ; UPDATE.VALPOS=LOOP.POS ; UPDATE.SUBVALPOS=0
+            GOSUB UPDATE.RECORD
+*
+            UPDATE.BASE=@TRUE ; UPDATE.NAME="serial" ; UPDATE.CONV=""
+            UPDATE.ATTR=12 ; UPDATE.VALPOS=LOOP.POS ; UPDATE.SUBVALPOS=0
+            GOSUB UPDATE.RECORD
+*
+            UPDATE.BASE=@TRUE ; UPDATE.NAME="price" ; UPDATE.CONV="MD0"
+            UPDATE.ATTR=13 ; UPDATE.VALPOS=LOOP.POS ; UPDATE.SUBVALPOS=0
+            GOSUB UPDATE.RECORD
+*
+            UPDATE.BASE=@TRUE ; UPDATE.NAME="datePurchased" ; UPDATE.CONV="D2/"
+            UPDATE.ATTR=14 ; UPDATE.VALPOS=LOOP.POS ; UPDATE.SUBVALPOS=0
+            GOSUB UPDATE.RECORD
+*
+            UPDATE.BASE=@TRUE ; UPDATE.NAME="datePaid" ; UPDATE.CONV="D2/"
+            UPDATE.ATTR=15 ; UPDATE.VALPOS=LOOP.POS ; UPDATE.SUBVALPOS=0
+            GOSUB UPDATE.RECORD
+*
+            UPDATE.BASE=@TRUE ; UPDATE.NAME="servicePrice" ; UPDATE.CONV="MD0"
+            UPDATE.ATTR=16 ; UPDATE.VALPOS=LOOP.POS ; UPDATE.SUBVALPOS=0
+            GOSUB UPDATE.RECORD
+*
+            UPDATE.BASE=@TRUE ; UPDATE.NAME="serviceStartDate" ; UPDATE.CONV="D2/"
+            UPDATE.ATTR=17 ; UPDATE.VALPOS=LOOP.POS ; UPDATE.SUBVALPOS=0
+            GOSUB UPDATE.RECORD
+*
+            UPDATE.BASE=@TRUE ; UPDATE.NAME="serviceEndDate" ; UPDATE.CONV="D2/"
+            UPDATE.ATTR=18 ; UPDATE.VALPOS=LOOP.POS ; UPDATE.SUBVALPOS=0
+            GOSUB UPDATE.RECORD
+*
+            UPDATE.BASE=@TRUE ; UPDATE.NAME="serviceContractPaidDate" ; UPDATE.CONV="D2/"
+            UPDATE.ATTR=19 ; UPDATE.VALPOS=LOOP.POS ; UPDATE.SUBVALPOS=0
+            GOSUB UPDATE.RECORD
+*
+         REPEAT
+      END
+*
+      WRITE RECORD ON FILE,ID ON ERROR
+         ERROR.CODE=700
+         ERROR.MESSAGE="Unable to write ":ID
+         GOSUB ADD.ERROR
+      END
+*
+      RETURN
+*-------------------------------------------------------
+UPDATE.RECORD:
+*-------------------------------------------------------
+      STATUS = UDOGetProperty(UPDATEOBJ,UPDATE.NAME,CHK,CHK.TYPE)
+      IF STATUS#MVHUB_ERROR THEN
+         IF CHK.TYPE=MVHUB_TRUE THEN CHK="Y"
+         IF CHK.TYPE=MVHUB_FALSE THEN CHK="N"
+         IF UPDATE.CONV#"" THEN CHK=ICONV(CHK,UPDATE.CONV)
+         IF UPDATE.BASE THEN
+            RECORD<UPDATE.ATTR,UPDATE.VALPOS,UPDATE.SUBVALPOS>=CHK
+         END ELSE
+            WORK.RECORD<UPDATE.ATTR,UPDATE.VALPOS,UPDATE.SUBVALPOS>=CHK
+         END
+      END
+*
+      RETURN
+*-------------------------------------------------------
+BUILD.REPLY:
+*-------------------------------------------------------
+      IF ACTION#"LIST" THEN
+         STATUS = UDOCreate(MVHUB_OBJECT, KEYOBJ)
+         STATUS = UDOSetProperty(REPLYOBJ, "key",KEYOBJ)
+*
+         ID.REC=ID
+         STATUS = UDOCreate(MVHUB_OBJECT, ITEMOBJ)
+         STATUS = UDOSetProperty(REPLYOBJ, "item",ITEMOBJ)
+*
+      END
+      STATUS = UDOSetProperty(KEYOBJ,"customerId",ID.REC<1>)
+      IF STATUS = MVHUB_ERROR THEN
+         STATUS = UDOGetLastError(ERROR.CODE,ERROR.MESSAGE)
+         ERROR.MESSAGE="[customerId] ":ERROR.MESSAGE
+         GOSUB ADD.ERROR
+         RETURN
+      END
+*
+      IF UDOSetProperty(ITEMOBJ, "salutation",RECORD<1,0,0>)#MVHUB_SUCCESS THEN GOSUB ADD.NODE.ERROR
+      IF UDOSetProperty(ITEMOBJ, "firstName",RECORD<2,0,0>)#MVHUB_SUCCESS THEN GOSUB ADD.NODE.ERROR
+      IF UDOSetProperty(ITEMOBJ, "lastName",RECORD<3,0,0>)#MVHUB_SUCCESS THEN GOSUB ADD.NODE.ERROR
+      IF UDOSetProperty(ITEMOBJ, "companyName",RECORD<4,0,0>)#MVHUB_SUCCESS THEN GOSUB ADD.NODE.ERROR
+      IF UDOSetProperty(ITEMOBJ, "addressLine1",RECORD<5,0,0>)#MVHUB_SUCCESS THEN GOSUB ADD.NODE.ERROR
+      IF UDOSetProperty(ITEMOBJ, "addressLine2",RECORD<6,0,0>)#MVHUB_SUCCESS THEN GOSUB ADD.NODE.ERROR
+      IF UDOSetProperty(ITEMOBJ, "city",RECORD<7,0,0>)#MVHUB_SUCCESS THEN GOSUB ADD.NODE.ERROR
+      IF UDOSetProperty(ITEMOBJ, "state",RECORD<8,0,0>)#MVHUB_SUCCESS THEN GOSUB ADD.NODE.ERROR
+      IF UDOSetProperty(ITEMOBJ, "zip",RECORD<9,0,0>)#MVHUB_SUCCESS THEN GOSUB ADD.NODE.ERROR
+      IF UDOSetProperty(ITEMOBJ, "telephone",RECORD<10,0,0>)#MVHUB_SUCCESS THEN GOSUB ADD.NODE.ERROR
+*
+* Table for orders
+*
+      STATUS = UDOCreate(MVHUB_ARRAY,ORDERSTABLEARY)
+      STATUS = UDOSetProperty(ITEMOBJ,"orders",ORDERSTABLEARY)
+      LOOP.CNT=DCOUNT(RECORD<15>,@VM)
+      FOR LOOP.POS=1 TO LOOP.CNT
+         IF UDOCreate(MVHUB_OBJECT,ORDERSOBJ)#MVHUB_SUCCESS THEN
+            GOSUB ADD.NODE.ERROR
+         END ELSE
+            IF UDOArrayAppendItem(ORDERSTABLEARY,ORDERSOBJ)#MVHUB_SUCCESS THEN
+               GOSUB ADD.NODE.ERROR
+            END ELSE
+               IF UDOSetProperty(ORDERSOBJ,"product",RECORD<11,LOOP.POS>)#MVHUB_SUCCESS THEN GOSUB ADD.NODE.ERROR
+               IF UDOSetProperty(ORDERSOBJ,"serial",RECORD<12,LOOP.POS>)#MVHUB_SUCCESS THEN GOSUB ADD.NODE.ERROR
+               IF UDOSetProperty(ORDERSOBJ,"price",RECORD<13,LOOP.POS>+0)#MVHUB_SUCCESS THEN GOSUB ADD.NODE.ERROR
+               IF UDOSetProperty(ORDERSOBJ,"datePurchased",RECORD<14,LOOP.POS>)#MVHUB_SUCCESS THEN GOSUB ADD.NODE.ERROR
+               IF UDOSetProperty(ORDERSOBJ,"datePaid",RECORD<15,LOOP.POS>)#MVHUB_SUCCESS THEN GOSUB ADD.NODE.ERROR
+               IF UDOSetProperty(ORDERSOBJ,"servicePrice",RECORD<16,LOOP.POS>+0)#MVHUB_SUCCESS THEN GOSUB ADD.NODE.ERROR
+               IF UDOSetProperty(ORDERSOBJ,"serviceStartDate",RECORD<17,LOOP.POS>)#MVHUB_SUCCESS THEN GOSUB ADD.NODE.ERROR
+               IF UDOSetProperty(ORDERSOBJ,"serviceEndDate",RECORD<18,LOOP.POS>)#MVHUB_SUCCESS THEN GOSUB ADD.NODE.ERROR
+               IF UDOSetProperty(ORDERSOBJ,"serviceContractPaidDate",RECORD<19,LOOP.POS>)#MVHUB_SUCCESS THEN GOSUB ADD.NODE.ERROR
+            END
+         END
+      NEXT LOOP.POS
+*
+*
+      RETURN

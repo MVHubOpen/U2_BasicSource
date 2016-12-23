@@ -152,23 +152,40 @@ BUILD.HANDLER:
     SRC<-1>='CASE ACTION="READ"'
     SRC<-1>=" GOSUB GET.ID.RECORD"
     SRC<-1>=" GOSUB BUILD.REPLY"
-    SRC<-1>='CASE ACTION="FROMAT"'
-    SRC<-1>=" ERROR.CODE=520"
-    SRC<-1>=' ERROR.MESSAGE="FORMAT is not allowed with this service"'
-    SRC<-1>=" GOSUB ADD.ERROR"
-    SRC<-1>=" GOSUB BUILD.REPLY"
-    SRC<-1>='CASE ACTION="WRITE"'
+    SRC<-1>='CASE ACTION="FORMAT"'
+    IF MAP.REC<MAP$EVENTCODE>#"" THEN
+        SRC<-1>=" GOSUB GET.ID.RECORD"
+        SRC<-1>=" GOSUB APPLY.UPDATE"
+        SRC<-1>=" GOSUB PROCESS.EVENT"
+        SRC<-1>=" GOSUB BUILD.REPLY"
+    END ELSE
+        SRC<-1>=" ERROR.CODE=520"
+        SRC<-1>=' ERROR.MESSAGE="FORMAT is not allowed with this service"'
+        SRC<-1>=" GOSUB ADD.ERROR"
+    END
+*
+    SRC<-1>='CASE ACTION="UPDATE"'
     SRC<-1>=" GOSUB GET.ID.RECORD"
     SRC<-1>=" GOSUB APPLY.UPDATE"
+    SRC<-1>=" GOSUB UPDATE.FILE"
     SRC<-1>=" GOSUB BUILD.REPLY"
 *
+    SRC<-1>='CASE ACTION="CREATE"'
     IF MAP.REC<MAP$CREATECODE>#"" THEN
-        SRC<-1>='CASE ACTION="CREATE"'
         SRC<-1>=" GOSUB CREATE.ID.RECORD"
         SRC<-1>=" GOSUB APPLY.UPDATE"
+        SRC<-1>=" GOSUB UPDATE.FILE"
         SRC<-1>=" GOSUB BUILD.REPLY"
+    END ELSE
+        SRC<-1>=" ERROR.CODE=520"
+        SRC<-1>=' ERROR.MESSAGE="CREATE is not allowed with this service"'
+        SRC<-1>=" GOSUB ADD.ERROR"
     END
     SRC<-1>='CASE ACTION="DELETE"'
+*
+    SRC<-1>='CASE ACTION="LIST"'
+    SRC<-1>=" GOSUB BUILD.REPLY"
+*
     SRC<-1>='CASE ACTION="ERROR"          ; * Error Already Handled'
     SRC<-1>="CASE 1"
     SRC<-1>=" ERROR.CODE=500"
@@ -201,6 +218,18 @@ BUILD.HANDLER:
         SRC<-1>="RETURN"
     END
 *
+    IF MAP.REC<MAP$EVENTCODE>#"" THEN
+        SRC<-1>="*-------------------------------------------------------"
+        SRC<-1>="PROCESS.EVENT:"
+        SRC<-1>="*-------------------------------------------------------"
+        SRC<-1>="* Custom Create Code"
+        CCODE=CHANGE(MAP.REC<MAP$EVENTCODE>,CHAR$LINEFEED,@VM)
+        CCODE=TRIM(CHANGE(CCODE,CHAR$RETURN,@VM),@VM)
+        SRC<-1>=RAISE(CCODE):SEPARATOR
+*
+        SRC<-1>="RETURN"
+    END
+*
     SRC<-1>="*-------------------------------------------------------"
     SRC<-1>="GET.ID.RECORD:"
     SRC<-1>="*-------------------------------------------------------"
@@ -218,18 +247,18 @@ BUILD.HANDLER:
     SRC<-1>='   REPLY.STATUS="400"'
     SRC<-1>="  END"
 *
-    CCNT=DCOUNT(MAP.REC<MAP$BASE+FLD$TYPE>,@VM)
+    CCNT=DCOUNT(MAP.REC<MAP$BASE+FLD$RECORD>,@VM)
     LAST.ASSOC.ID="!!NEVERMATCHTHIS!!" ; CLOSE.LOOP=@FALSE
     FOR CPOS=1 TO CCNT
         ASSOC.ID=MAP.REC<MAP$BASE+FLD$ASSOC,CPOS>
-        WTYPE=MAP.REC<MAP$BASE+FLD$TYPE,CPOS>
+        WRECORD=MAP.REC<MAP$BASE+FLD$RECORD,CPOS>
         WNAME=MAP.REC<MAP$BASE+FLD$NAME,CPOS>
         WATTR=MAP.REC<MAP$BASE+FLD$ATTR,CPOS>
         WVALPOS=MAP.REC<MAP$BASE+FLD$VALPOS,CPOS>+0
         WSUBVALPOS=MAP.REC<MAP$BASE+FLD$SUBVALPOS,CPOS>+0
         WCONV=MAP.REC<MAP$BASE+FLD$CONV,CPOS>
 *
-        IF ASSOC.ID=KEY.ASSOC THEN
+        IF WRECORD=RECORD$ID THEN
             SRC<-1>='STATUS = UDOGetProperty(KEYOBJ, "':WNAME:'", VALUE, VALUE.TYPE)'
             SRC<-1>="IF STATUS = MVHUB_ERROR THEN"
             SRC<-1>="STATUS = UDOGetLastError(ERROR.CODE,ERROR.MESSAGE)"
@@ -285,17 +314,17 @@ BUILD.HANDLER:
     SRC<-1>=" RETURN"
     SRC<-1>="END":SEPARATOR
 *
-    CCNT=DCOUNT(MAP.REC<MAP$BASE+FLD$TYPE>,@VM)
+    CCNT=DCOUNT(MAP.REC<MAP$BASE+FLD$RECORD>,@VM)
     LAST.ASSOC.ID="!!NEVERMATCHTHIS!!" ; CLOSE.LOOP=@FALSE
     FOR CPOS=1 TO CCNT
         ASSOC.ID=MAP.REC<MAP$BASE+FLD$ASSOC,CPOS>
-        WTYPE=MAP.REC<MAP$BASE+FLD$TYPE,CPOS>
+        WRECORD=MAP.REC<MAP$BASE+FLD$RECORD,CPOS>
         WNAME=MAP.REC<MAP$BASE+FLD$NAME,CPOS>
         WATTR=MAP.REC<MAP$BASE+FLD$ATTR,CPOS>
         WVALPOS=MAP.REC<MAP$BASE+FLD$VALPOS,CPOS>+0
         WSUBVALPOS=MAP.REC<MAP$BASE+FLD$SUBVALPOS,CPOS>+0
         WCONV=MAP.REC<MAP$BASE+FLD$CONV,CPOS>
-        UBASE="@TRUE" ; IF WTYPE="W" THEN UBASE="@FALSE"
+        UBASE="@TRUE" ; IF WRECORD="W" THEN UBASE="@FALSE"
 *
         BEGIN CASE
             CASE ASSOC.ID=KEY.ASSOC
@@ -333,12 +362,12 @@ BUILD.HANDLER:
                     FOR RPOS=1 TO CCNT
 *
                         RASSOC.ID=MAP.REC<MAP$BASE+FLD$ASSOC,RPOS>
-                        RWTYPE=MAP.REC<MAP$BASE+FLD$TYPE,RPOS>
+                        RWRECORD=MAP.REC<MAP$BASE+FLD$RECORD,RPOS>
                         RWNAME=MAP.REC<MAP$BASE+FLD$NAME,RPOS>
                         RWATTR=MAP.REC<MAP$BASE+FLD$ATTR,RPOS>
                         RWVALPOS=MAP.REC<MAP$BASE+FLD$VALPOS,RPOS>+0
                         RWSUBVALPOS=MAP.REC<MAP$BASE+FLD$SUBVALPOS,RPOS>+0
-                        RUBASE="RECORD" ; IF WTYPE="W" THEN UBASE="WORK.RECORD"
+                        RUBASE="RECORD" ; IF WRECORD="W" THEN UBASE="WORK.RECORD"
 *
                         IF RASSOC.ID=ASSOC.ID THEN
                             IF LN#"" THEN LN:="; "
@@ -385,20 +414,6 @@ BUILD.HANDLER:
         SRC<-1>="REPEAT"
         SRC<-1>="END":SEPARATOR
     END
-*
-    IF MAP.REC<MAP$WRITECODE>#"" THEN
-        SRC<-1>="* Custom Write Code"
-        CCODE=CHANGE(MAP.REC<MAP$WRITECODE>,CHAR$LINEFEED,@VM)
-        CCODE=TRIM(CHANGE(CCODE,CHAR$RETURN,@VM),@VM)
-        SRC<-1>=RAISE(CCODE):SEPARATOR
-    END ELSE
-        SRC<-1>="WRITE RECORD ON FILE,ID ON ERROR"
-        SRC<-1>=" ERROR.CODE=700"
-        ýSRC<-1>=' ERROR.MESSAGE="Unable to write ":ID'
-        ýSRC<-1>=" GOSUB ADD.ERROR"
-        SRC<-1>="END"
-    END
-*
     SRC<-1>="*":@AM:"RETURN"
 *
     SRC<-1>="*-------------------------------------------------------"
@@ -418,30 +433,49 @@ BUILD.HANDLER:
     SRC<-1>="*":@AM:"RETURN"
 *
     SRC<-1>="*-------------------------------------------------------"
+    SRC<-1>="UPDATE.FILE:"
+    SRC<-1>="*-------------------------------------------------------"
+    IF MAP.REC<MAP$WRITECODE>#"" THEN
+        SRC<-1>="* Custom Write Code"
+        CCODE=CHANGE(MAP.REC<MAP$WRITECODE>,CHAR$LINEFEED,@VM)
+        CCODE=TRIM(CHANGE(CCODE,CHAR$RETURN,@VM),@VM)
+        SRC<-1>=RAISE(CCODE):SEPARATOR
+    END ELSE
+        SRC<-1>="WRITE RECORD ON FILE,ID ON ERROR"
+        SRC<-1>=" ERROR.CODE=700"
+        ýSRC<-1>=' ERROR.MESSAGE="Unable to write ":ID'
+        ýSRC<-1>=" GOSUB ADD.ERROR"
+        SRC<-1>="END"
+    END
+*
+    SRC<-1>="*":@AM:"RETURN"
+*
+    SRC<-1>="*-------------------------------------------------------"
     SRC<-1>="BUILD.REPLY:"
     SRC<-1>="*-------------------------------------------------------"
-    SRC<-1>="STATUS = UDOCreate(MVHUB_OBJECT, KEYOBJ)"
-    SRC<-1>='STATUS = UDOSetProperty(REPLYOBJ, "key",KEYOBJ)':SEPARATOR
-*
-    SRC<-1>="ID.REC=ID"
+    SRC<-1>='IF ACTION#"LIST" THEN'
+    SRC<-1>=" STATUS = UDOCreate(MVHUB_OBJECT, KEYOBJ)"
+    SRC<-1>=' STATUS = UDOSetProperty(REPLYOBJ, "key",KEYOBJ)':SEPARATOR
+    SRC<-1>=" ID.REC=ID"
     IF DELIMITER#"" THEN SRC:="; CONVERT DELIMITER TO @AM IN ID.REC"
+    SRC<-1>=" STATUS = UDOCreate(MVHUB_OBJECT, ITEMOBJ)"
+    SRC<-1>=' STATUS = UDOSetProperty(REPLYOBJ, "item",ITEMOBJ)':SEPARATOR
+    SRC<-1>="END"
 *
-    SRC<-1>="STATUS = UDOCreate(MVHUB_OBJECT, ITEMOBJ)"
-    SRC<-1>='STATUS = UDOSetProperty(REPLYOBJ, "item",ITEMOBJ)':SEPARATOR
-*
-    CCNT=DCOUNT(MAP.REC<MAP$BASE+FLD$TYPE>,@VM)
+    CCNT=DCOUNT(MAP.REC<MAP$BASE+FLD$RECORD>,@VM)
     LAST.ASSOC.ID="!!NEVERMATCHTHIS!!" ; CLOSE.LOOP=@FALSE
     FOR CPOS=1 TO CCNT
         ASSOC.ID=MAP.REC<MAP$BASE+FLD$ASSOC,CPOS>
-        WTYPE=MAP.REC<MAP$BASE+FLD$TYPE,CPOS>
+        WRECORD=MAP.REC<MAP$BASE+FLD$RECORD,CPOS>
         WNAME=MAP.REC<MAP$BASE+FLD$NAME,CPOS>
         WATTR=MAP.REC<MAP$BASE+FLD$ATTR,CPOS>
         WVALPOS=MAP.REC<MAP$BASE+FLD$VALPOS,CPOS>+0
         WSUBVALPOS=MAP.REC<MAP$BASE+FLD$SUBVALPOS,CPOS>+0
         WCONV=MAP.REC<MAP$BASE+FLD$CONV,CPOS>
+        WFLDTYPE=MAP.REC<MAP$BASE+FLD$TYPE,CPOS>
 *
         BEGIN CASE
-            CASE ASSOC.ID=KEY.ASSOC
+            CASE WRECORD=RECORD$ID
                 SRC<-1>='STATUS = UDOSetProperty(KEYOBJ,"':WNAME:'",ID.REC<':CPOS:'>)'
                 SRC<-1>="IF STATUS = MVHUB_ERROR THEN"
                 SRC<-1>="STATUS = UDOGetLastError(ERROR.CODE,ERROR.MESSAGE)"
@@ -451,12 +485,10 @@ BUILD.HANDLER:
                 CLOSE.LOOP=@FALSE
             CASE ASSOC.ID=BASE.ASSOC
                 ALN="RECORD"
-                IF WTYPE="W" THEN ALN="WORK.RECORD"
+                IF WRECORD=RECORD$WORK THEN ALN="WORK.RECORD"
                 ALN:="<":WATTR:",":WVALPOS:",":WSUBVALPOS:">"
-                IF WCONV THEN
-                    ALN='OCONV(':ALN:',"':WCONV:'")'
-                    IF WCONV[1,2]="MD" THEN ALN=ALN:'+0'
-                END
+                IF WFLDTYPE=VARTYPE$NUMBER THEN ALN=ALN:"+0"
+*
                 SRC<-1>='IF UDOSetProperty(ITEMOBJ, "':WNAME:'",':ALN:')#MVHUB_SUCCESS THEN GOSUB ADD.NODE.ERROR'
                 CLOSE.LOOP=@FALSE
             CASE 1
@@ -490,12 +522,10 @@ BUILD.HANDLER:
                 END
 *
                 ALN="RECORD"
-                IF WTYPE="W" THEN ALN="WORK.RECORD"
+                IF WRECORD="W" THEN ALN="WORK.RECORD"
                 ALN:="<":WATTR:",LOOP.POS>"
-                IF WCONV THEN
-                    ALN='OCONV(':ALN:',"':WCONV:'")'
-                    IF WCONV[1,2]="MD" THEN ALN=ALN:'+0'
-                END
+                IF WFLDTYPE=VARTYPE$NUMBER THEN ALN=ALN:"+0"
+*
                 SRC<-1>='IF UDOSetProperty(':ASSOC.ONAME:',"':WNAME:'",':ALN:')#MVHUB_SUCCESS THEN GOSUB ADD.NODE.ERROR'
 *
         END CASE
@@ -528,6 +558,12 @@ BUILD.HANDLER:
     END
 *
     RETURN
+*
+    SRC<-1>="*-------------------------------------------------------"
+    SRC<-1>="BUILD.LIST:"
+    SRC<-1>="*-------------------------------------------------------"
+*
+    SRC<-1>="*":@AM:"RETURN"
 *-------------------------------------------------------
 UPDATE.MAP:
 *-------------------------------------------------------
@@ -579,7 +615,7 @@ UPDATE.MAP:
     ACNT=DCOUNT(WK.MAP<MAP$ASSOC>,@VM) ; NCPOS=0
     FOR APOS=1 TO ACNT
         ADD.BASE=((APOS-1)*FLD$OFFSET)+MAP$BASE
-        CCNT=DCOUNT(WK.MAP<ADD.BASE+FLD$TYPE>,@VM)
+        CCNT=DCOUNT(WK.MAP<ADD.BASE+FLD$RECORD>,@VM)
         FOR CPOS=1 TO CCNT
             NCPOS+=1
             FOR FPOS=1 TO FLD$OFFSET
@@ -594,12 +630,14 @@ UPDATE.MAP:
 *-------------------------------------------------------
 PROCESS.DATA.DICT:
 *-------------------------------------------------------
-    ATTR=DICT.REC<2>+0 ; READONLY=@FALSE
+    ATTR=DICT.REC<2>+0 ; READONLY=@FALSE ; FLDTYPE=VARTYPE$STRING ; RECORD.TYPE=RECORD$BASE
     ASSOC.NAME=DICT.REC<7>
     IF ASSOC.NAME[1,6]="TABLE-" THEN ASSOC.NAME=ASSOC.NAME[7,LEN(ASSOC.NAME)]
     IF DICT.REC<6>="M" AND ASSOC.NAME="" THEN ASSOC.NAME="ASSOC":ATTR"R%5"
     IF ASSOC.NAME="" THEN ASSOC.NAME=BASE.ASSOC
-    IF ATTR=0 THEN ASSOC.NAME=KEY.ASSOC
+    IF ATTR=0 THEN
+        ASSOC.NAME=KEY.ASSOC ; RECORD.TYPE=RECORD$ID
+    END
 *
     LOCATE(ASSOC.NAME,WK.MAP,MAP$ASSOC;APOS) ELSE
         APOS=DCOUNT(WK.MAP<MAP$ASSOC>,@VM)+1
@@ -618,7 +656,7 @@ PROCESS.DATA.DICT:
         WK.MAP=INSERT(WK.MAP,ADD.BASE+I,CPOS;"")
     NEXT I
 *
-    WK.MAP<ADD.BASE+FLD$TYPE,CPOS>=DTYPE
+    WK.MAP<ADD.BASE+FLD$RECORD,CPOS>=RECORD.TYPE
 *
     WORK.NAME=DICT.REC<4>
     IF WORK.NAME="" THEN WORK.NAME=DICT.ID
@@ -631,6 +669,12 @@ PROCESS.DATA.DICT:
 *
     CONV=DICT.REC<3> ; GOSUB NORMALIZE.CONV
     WK.MAP<ADD.BASE+FLD$CONV,CPOS>=CONV
+*
+    IF CONV[1,2]="MD" OR CONV[1,2]="MR" THEN FLDTYPE=VARTYPE$NUMBER
+    IF CONV[1,2]="MT" THEN FLDTYPE=VARTYPE$TIME
+    IF CONV[1,1]="D" THEN FLDTYPE=VARTYPE$DATE
+    IF CONV[1,1]="G" THEN READONLY=@TRUE
+    WK.MAP<ADD.BASE+FLD$TYPE,CPOS>=FLDTYPE
 *
     LENGTH=DICT.REC<5> ; CONVERT "TLR" TO "" IN LENGTH
     WK.MAP<ADD.BASE+FLD$LENGTH,CPOS>=LENGTH
