@@ -180,6 +180,7 @@ ADD.NODE.ERROR:
 *-------------------------------------------------------
 ADD.ERROR:
 *-------------------------------------------------------
+    IF UNASSIGNED(ERROR.PREPEND) THEN ERROR.PREPEND=""
     ACTION="ERROR"
     IF UNASSIGNED(REPLYOBJ) THEN STATUS = UDOCreate(MVHUB_OBJECT, REPLYOBJ)
     IF ERROR.CODE<100 THEN ERROR.CODE+=1000
@@ -196,7 +197,9 @@ ADD.ERROR:
     STATUS=UDOCreate(MVHUB_OBJECT, ERROROBJ)
     STATUS = UDOArrayAppendItem(ERRORSOBJ,ERROROBJ)
     STATUS = UDOSetProperty(ERROROBJ,"code",ERROR.CODE)
-    STATUS = UDOSetProperty(ERROROBJ,"message",ERROR.MESSAGE)
+    STATUS = UDOSetProperty(ERROROBJ,"message",TRIM(ERROR.PREPEND:ERROR.MESSAGE))
+*
+    ERROR.PREPEND=""
 *
     RETURN
 *-------------------------------------------------------
