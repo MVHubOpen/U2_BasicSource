@@ -7,17 +7,20 @@
 * System : e-CAT
 * Date   : 12/21/2016
 *-------------------------------------------------------
+    VERSION="17.01.01"
     INCLUDE MVHUB.BP MVHUB.MAP.INCLUDE
     OPEN "MVHUB.LOG" TO F.MAPLOG ELSE ABORT 201,"MVHUB.LOG"
 *
     HANDLER.ID=SEN<2>
 *
-    READ REQUEST.HEADER FROM F.MAPLOG,HANDLER.ID:"_REQUEST_HEADER" THEN
+    READ REQUEST.HEADER FROM F.MAPLOG,HANDLER.ID:"_REQUEST_HEADER" ELSE
         CRT "No Test Header available for ":HANDLER.ID
+        STOP
     END
 *
-    READ REQUEST FROM F.MAPLOG,HANDLER.ID:"_REQUEST" THEN
+    READ REQUEST FROM F.MAPLOG,HANDLER.ID:"_REQUEST" ELSE
         CRT "No Test Request available for ":HANDLER.ID
+        STOP
     END
 *
     SUBNAME=HANDLER.ID:".HANDLER.SUB"
@@ -26,7 +29,7 @@
     CRT "Reply Header:"
     ATTR.CNT=DCOUNT(REPLY.HEADER,@AM)
     FOR ATTR=1 TO ATTR.CNT
-        CRT ATTR"R%2":" : ":REPLY.HEADER
+        CRT ATTR"R%2":" : ":REPLY.HEADER<ATTR>
     NEXT ATTR
 *
     CRT "Reply:"
