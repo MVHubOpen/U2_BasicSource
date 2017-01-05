@@ -118,7 +118,7 @@ BUILD.HANDLER:
     DELIMITER=MAP.REC<MAP$DELIMITER>
     IF DELIMITER#"" THEN SRC<-1>='EQUATE DELIMITER TO "':DELIMITER:'"'
 *
-    SRC<-1>='REPLY.STATUS="200"; REPLY.TYPE="application/json" '
+    SRC<-1>='REPLY.STATUS="200"; REPLY.TYPE="application/json"'
 *
     SRC<-1>="IF UDOCreate(MVHUB_OBJECT, REPLYOBJ)#MVHUB_SUCCESS THEN ABORT":SEPARATOR
 *
@@ -133,10 +133,18 @@ BUILD.HANDLER:
 *
     SRC<-1>="BEGIN CASE"
     SRC<-1>='CASE METHOD="GET"'
+    SRC<-1>='IF URL.TABLE<1>="!QUERY" THEN '
+    SRC<-1>="QUERY.LIST=DELETE(URL.TABLE,1)"
+    SRC<-1>=' ACTION="QUERY"'
+    SRC<-1>="GOSUB MAPPED.QUERY"
+    SRC<-1>="END ELSE"
     SRC<-1>=' ID.REC=TRIM(URL.TABLE,"/"); CONVERT "/" TO @AM IN ID.REC'
     SRC<-1>=' ACTION="READ"'
     SRC<-1>=" GOSUB GET.RECORD"
-    SRC<-1>=" IF REPLY.STATUS=200 THEN GOSUB BUILD.REPLY"
+    SRC<-1>=" IF REPLY.STATUS=200 THEN "
+    SRC<-1>=" GOSUB BUILD.REPLY"
+    SRC<-1>="END":SEPARATOR
+    SRC<-1>="END":SEPARATOR
     SRC<-1>="IF UDOWrite(REPLYOBJ, MVHUB_FORMAT_JSON, REPLY)#MVHUB_SUCCESS THEN"
     SRC<-1>=" REPLY.STATUS=409"
     SRC<-1>=\REPLY='{"errors":[{"code": 409,"message":"Unable to render document"}]}'\
@@ -200,8 +208,8 @@ BUILD.HANDLER:
     END
     SRC<-1>='CASE ACTION="DELETE"'
 *
-    SRC<-1>='CASE ACTION="LIST"'
-    SRC<-1>=" GOSUB BUILD.REPLY"
+    SRC<-1>='CASE ACTION="QUERY"'
+    SRC<-1>=" GOSUB QUERY.FILE"
 *
     SRC<-1>='CASE ACTION="ERROR"          ; * Error Already Handled'
     SRC<-1>="CASE 1"
@@ -250,6 +258,67 @@ BUILD.HANDLER:
 *
         SRC<-1>="RETURN"
     END
+*
+    SRC<-1>="*-------------------------------------------------------"
+    SRC<-1>="QUERY.FILE:"
+    SRC<-1>="*-------------------------------------------------------"
+    SRC<-1>="*-------------------------------------------------------"
+    SRC<-1>="MAPPED.QUERY:"
+    SRC<-1>="*-------------------------------------------------------"
+*
+    SRC<-1>=' STATUS = UDOSetProperty(REPLYOBJ, "action",OCONV(ACTION,"MCT"):"Reply")'
+*
+    SRC<-1>=" STATUS = UDOCreate(MVHUB_ARRAY,LISTARRY)"
+    SRC<-1>=' STATUS = UDOSetProperty(REPLYOBJ, "list",LISTARRY)':SEPARATOR
+*
+    SRC<-1>='SEL.STMT="SELECT ":FILENAME'
+    SRC<-1>="EXECUTE SEL.STMT CAPTURING OUTPUT RTNLIST WORKLIST RETURNING FUNCTION_EXIT_CODE"
+    SRC<-1>="DONE=@FALSE; QUERY.CNT=0"
+    SRC<-1>="LOOP"
+    SRC<-1>="READNEXT ID FROM WORKLIST ELSE DONE=@TRUE"
+    SRC<-1>="UNTIL DONE DO"
+    SRC<-1>="READ RECORD FROM FILE,ID THEN"
+    SRC<-1>="IF UDOCreate(MVHUB_OBJECT,LISTOBJ)=MVHUB_SUCCESS THEN"
+    SRC<-1>=" IF UDOArrayAppendItem(LISTARRY,LISTOBJ)=MVHUB_SUCCESS THEN"
+*
+    SRC<-1>=" STATUS = UDOCreate(MVHUB_OBJECT, KEYOBJ)"
+    SRC<-1>=' STATUS = UDOSetProperty(LISTOBJ, "key",KEYOBJ)':SEPARATOR
+    SRC<-1>="QUERY.CNT+=1"
+    SRC<-1>=" ID.REC=ID"
+    IF DELIMITER#"" THEN SRC:="; CONVERT DELIMITER TO @AM IN ID.REC"
+    SRC<-1>=" STATUS = UDOCreate(MVHUB_OBJECT, ITEMOBJ)"
+    SRC<-1>=' STATUS = UDOSetProperty(LISTOBJ, "item",ITEMOBJ)':SEPARATOR
+*
+    CCNT=DCOUNT(MAP.REC<MAP$BASE+FLD$RECORD>,@VM) ; BASE.ATTR=0
+    LAST.ASSOC.ID="!!NEVERMATCHTHIS!!" ; CLOSE.LOOP=@FALSE
+    FOR CPOS=1 TO CCNT
+        ASSOC.ID=MAP.REC<MAP$BASE+FLD$ASSOC,CPOS>
+        WRECORD=MAP.REC<MAP$BASE+FLD$RECORD,CPOS>
+        WNAME=MAP.REC<MAP$BASE+FLD$NAME,CPOS> ; IF WNAME="" THEN WNAME="FLD":CPOS
+        WATTR=MAP.REC<MAP$BASE+FLD$ATTR,CPOS>
+        WVALPOS=MAP.REC<MAP$BASE+FLD$VALPOS,CPOS>+0
+        WSUBVALPOS=MAP.REC<MAP$BASE+FLD$SUBVALPOS,CPOS>+0
+        WCONV=MAP.REC<MAP$BASE+FLD$CONV,CPOS>
+        WFLDTYPE=MAP.REC<MAP$BASE+FLD$TYPE,CPOS>
+        WQUERYITEM=MAP.REC<MAP$BASE+FLD$QUERYITEM,CPOS>
+*
+        BEGIN CASE
+            CASE WRECORD=RECORD$ID AND WQUERYITEM="Y"
+                WORKOBJ="KEYOBJ" ; GOSUB ADD.OUTCODE
+            CASE ASSOC.ID=BASE.ASSOC AND WQUERYITEM="Y"
+                WORKOBJ="ITEMOBJ" ; GOSUB ADD.OUTCODE
+        END CASE
+*
+    NEXT CPOS
+*
+    SRC<-1>=' STATUS = UDOSetProperty(REPLYOBJ, "count",QUERY.CNT)':SEPARATOR
+    SRC<-1>=' STATUS = UDOSetProperty(REPLYOBJ, "select",SEL.STMT)':SEPARATOR
+*
+    SRC<-1>=" END" ; SRC<-1>="END"
+*
+    SRC<-1>="END" ; SRC<-1>="REPEAT"
+*
+    SRC<-1>="RETURN"
 *
     SRC<-1>="*-------------------------------------------------------"
     SRC<-1>="GET.ID.RECORD:"
@@ -460,14 +529,12 @@ BUILD.HANDLER:
     SRC<-1>="*-------------------------------------------------------"
     SRC<-1>="BUILD.REPLY:"
     SRC<-1>="*-------------------------------------------------------"
-    SRC<-1>='IF ACTION#"LIST" THEN'
     SRC<-1>=" STATUS = UDOCreate(MVHUB_OBJECT, KEYOBJ)"
     SRC<-1>=' STATUS = UDOSetProperty(REPLYOBJ, "key",KEYOBJ)':SEPARATOR
     SRC<-1>=" ID.REC=ID"
     IF DELIMITER#"" THEN SRC:="; CONVERT DELIMITER TO @AM IN ID.REC"
     SRC<-1>=" STATUS = UDOCreate(MVHUB_OBJECT, ITEMOBJ)"
     SRC<-1>=' STATUS = UDOSetProperty(REPLYOBJ, "item",ITEMOBJ)':SEPARATOR
-    SRC<-1>="END"
 *
     CCNT=DCOUNT(MAP.REC<MAP$BASE+FLD$RECORD>,@VM) ; BASE.ATTR=0
     LAST.ASSOC.ID="!!NEVERMATCHTHIS!!" ; CLOSE.LOOP=@FALSE
@@ -570,12 +637,6 @@ BUILD.HANDLER:
     END
 *
     RETURN
-*
-    SRC<-1>="*-------------------------------------------------------"
-    SRC<-1>="BUILD.LIST:"
-    SRC<-1>="*-------------------------------------------------------"
-*
-    SRC<-1>="*":@AM:"RETURN"
 *-------------------------------------------------------
 ADD.OUTCODE:
 *-------------------------------------------------------
