@@ -1,12 +1,8 @@
 *-------------------------------------------------------
-* Cypress Business Solutions
-* P.O. Box 1637
-* Woodstock, GA 30188
-* (678) 494-9353
-* All Rights Reserved @ 2016
-* System : e-CAT
-* Date   : 12/15/2016
-*-------------------------------------------------------
+* mvHubOpen, copyright (c) by James F Thompson
+* Distributed under an MIT license:
+*                     https://opensource.org/licenses/MIT
+*
 * CREATE.MVHUB HS.CUSTOMER /BUILDMAP
 *-------------------------------------------------------
     INCLUDE MVHUB.BP MVHUB.MAP.INCLUDE
@@ -61,7 +57,7 @@
     END
     TITLE=MAP.REC<MAP$TITLE>
 *
-    MAP.VERSION=MAP.REC<MAP$MAP.VERSION>
+    MAP.VERSION=MAP.REC<MAP$MAP.VERSION> ; WASSOCTYPE=ASSOCTYPES$NODE
     IF MAP.VERSION#"" THEN
         CVERSION=FIELD(MAP.VERSION,"_",1,3)
         XVERSION=FIELD(MAP$VERSION.NUMBER,"_",1,3)
@@ -193,6 +189,7 @@ BUILD.HANDLER:
     SRC<-1>=" GOSUB GET.ID.RECORD"
     SRC<-1>=" GOSUB APPLY.UPDATE"
     SRC<-1>=" GOSUB UPDATE.FILE"
+    SRC<-1>=" GOSUB GET.RECORD"
     SRC<-1>=" GOSUB BUILD.REPLY"
 *
     SRC<-1>='CASE ACTION="CREATE"'
@@ -200,6 +197,7 @@ BUILD.HANDLER:
         SRC<-1>=" GOSUB CREATE.ID.RECORD"
         SRC<-1>=" GOSUB APPLY.UPDATE"
         SRC<-1>=" GOSUB UPDATE.FILE"
+        SRC<-1>=" GOSUB GET.RECORD"
         SRC<-1>=" GOSUB BUILD.REPLY"
     END ELSE
         SRC<-1>=" ERROR.CODE=520"
@@ -268,8 +266,25 @@ BUILD.HANDLER:
 *
     SRC<-1>=' STATUS = UDOSetProperty(REPLYOBJ, "action",OCONV(ACTION,"MCT"):"Reply")'
 *
+    SRC<-1>=" STATUS = UDOCreate(MVHUB_ARRAY,COLUMNARRY)"
+    SRC<-1>=' STATUS = UDOSetProperty(REPLYOBJ, "columns",COLUMNARRY)':SEPARATOR
+    CCNT=DCOUNT(MAP.REC<MAP$BASE+FLD$RECORD>,@VM)
+    FOR CPOS=1 TO CCNT
+        GOSUB SET.WVAR
+*
+        IF WQUERYITEM="Y" THEN
+            SRC<-1>="IF UDOCreate(MVHUB_OBJECT,COLUMNOBJ)=MVHUB_SUCCESS THEN"
+            SRC<-1>=" IF UDOArrayAppendItem(COLUMNARRY,COLUMNOBJ)=MVHUB_SUCCESS THEN"
+            SRC<-1>=' IF UDOSetProperty(COLUMNOBJ, "name","':WNAME:'")#MVHUB_SUCCESS THEN ERROR.PREPEND="[':WNAME:'] " ; GOSUB ADD.NODE.ERROR'
+            SRC<-1>=' IF UDOSetProperty(COLUMNOBJ, "label","':WLABEL:'")#MVHUB_SUCCESS THEN ERROR.PREPEND="[':WNAME:'] " ; GOSUB ADD.NODE.ERROR'
+            SRC<-1>=' IF UDOSetProperty(COLUMNOBJ, "length",':WLENGTH+0:')#MVHUB_SUCCESS THEN ERROR.PREPEND="[':WNAME:'] " ; GOSUB ADD.NODE.ERROR'
+            SRC<-1>="END" ; SRC<-1>="END"
+        END
+*
+    NEXT CPOS
+*
     SRC<-1>=" STATUS = UDOCreate(MVHUB_ARRAY,LISTARRY)"
-    SRC<-1>=' STATUS = UDOSetProperty(REPLYOBJ, "list",LISTARRY)':SEPARATOR
+    SRC<-1>=' STATUS = UDOSetProperty(REPLYOBJ, "rows",LISTARRY)':SEPARATOR
 *
     SRC<-1>='SEL.STMT="SELECT ":FILENAME'
     SRC<-1>="EXECUTE SEL.STMT CAPTURING OUTPUT RTNLIST WORKLIST RETURNING FUNCTION_EXIT_CODE"
@@ -282,37 +297,29 @@ BUILD.HANDLER:
     SRC<-1>=" IF UDOArrayAppendItem(LISTARRY,LISTOBJ)=MVHUB_SUCCESS THEN"
 *
     SRC<-1>=" STATUS = UDOCreate(MVHUB_OBJECT, KEYOBJ)"
-    SRC<-1>=' STATUS = UDOSetProperty(LISTOBJ, "key",KEYOBJ)':SEPARATOR
+    SRC<-1>=' STATUS = UDOSetProperty(LISTOBJ, "':KEYOBJ.NAME:'",KEYOBJ)':SEPARATOR
     SRC<-1>="QUERY.CNT+=1"
     SRC<-1>=" ID.REC=ID"
     IF DELIMITER#"" THEN SRC:="; CONVERT DELIMITER TO @AM IN ID.REC"
     SRC<-1>=" STATUS = UDOCreate(MVHUB_OBJECT, ITEMOBJ)"
-    SRC<-1>=' STATUS = UDOSetProperty(LISTOBJ, "item",ITEMOBJ)':SEPARATOR
+    SRC<-1>=' STATUS = UDOSetProperty(LISTOBJ, "':ITEMOBJ.NAME:'",ITEMOBJ)':SEPARATOR
 *
-    CCNT=DCOUNT(MAP.REC<MAP$BASE+FLD$RECORD>,@VM) ; BASE.ATTR=0
-    LAST.ASSOC.ID="!!NEVERMATCHTHIS!!" ; CLOSE.LOOP=@FALSE
     FOR CPOS=1 TO CCNT
-        ASSOC.ID=MAP.REC<MAP$BASE+FLD$ASSOC,CPOS>
-        WRECORD=MAP.REC<MAP$BASE+FLD$RECORD,CPOS>
-        WNAME=MAP.REC<MAP$BASE+FLD$NAME,CPOS> ; IF WNAME="" THEN WNAME="FLD":CPOS
-        WATTR=MAP.REC<MAP$BASE+FLD$ATTR,CPOS>
-        WVALPOS=MAP.REC<MAP$BASE+FLD$VALPOS,CPOS>+0
-        WSUBVALPOS=MAP.REC<MAP$BASE+FLD$SUBVALPOS,CPOS>+0
-        WCONV=MAP.REC<MAP$BASE+FLD$CONV,CPOS>
-        WFLDTYPE=MAP.REC<MAP$BASE+FLD$TYPE,CPOS>
-        WQUERYITEM=MAP.REC<MAP$BASE+FLD$QUERYITEM,CPOS>
+        GOSUB SET.WVAR
 *
-        BEGIN CASE
-            CASE WRECORD=RECORD$ID AND WQUERYITEM="Y"
-                WORKOBJ="KEYOBJ" ; GOSUB ADD.OUTCODE
-            CASE ASSOC.ID=BASE.ASSOC AND WQUERYITEM="Y"
-                WORKOBJ="ITEMOBJ" ; GOSUB ADD.OUTCODE
-        END CASE
+        IF WRECORD=RECORD$ID AND WQUERYITEM="Y" THEN
+            WORKOBJ="KEYOBJ" ; GOSUB ADD.OUTCODE
+        END
+*
+        IF WQUERYITEM="Y" THEN
+            WORKOBJ="ITEMOBJ" ; GOSUB ADD.OUTCODE
+        END
 *
     NEXT CPOS
 *
     SRC<-1>=' STATUS = UDOSetProperty(REPLYOBJ, "count",QUERY.CNT)':SEPARATOR
     SRC<-1>=' STATUS = UDOSetProperty(REPLYOBJ, "select",SEL.STMT)':SEPARATOR
+    SRC<-1>=' STATUS = UDOSetProperty(REPLYOBJ, "title","':MAP.REC<MAP$TITLE>:'")':SEPARATOR
 *
     SRC<-1>=" END" ; SRC<-1>="END"
 *
@@ -325,7 +332,7 @@ BUILD.HANDLER:
     SRC<-1>="*-------------------------------------------------------"
     SRC<-1>='ID.REC=""'
 *
-    SRC<-1>='  IF UDOGetProperty(INOBJ, "key", KEYOBJ, KEYOBJ.TYPE)#MVHUB_SUCCESS THEN'
+    SRC<-1>='  IF UDOGetProperty(INOBJ, "':KEYOBJ.NAME:'", KEYOBJ, KEYOBJ.TYPE)#MVHUB_SUCCESS THEN'
     SRC<-1>="   GOSUB ADD.NODE.ERROR"
     SRC<-1>="   KEYOBJ.TYPE = -1"
     SRC<-1>="  END":SEPARATOR
@@ -340,13 +347,7 @@ BUILD.HANDLER:
     CCNT=DCOUNT(MAP.REC<MAP$BASE+FLD$RECORD>,@VM)
     LAST.ASSOC.ID="!!NEVERMATCHTHIS!!" ; CLOSE.LOOP=@FALSE
     FOR CPOS=1 TO CCNT
-        ASSOC.ID=MAP.REC<MAP$BASE+FLD$ASSOC,CPOS>
-        WRECORD=MAP.REC<MAP$BASE+FLD$RECORD,CPOS>
-        WNAME=MAP.REC<MAP$BASE+FLD$NAME,CPOS> ; IF WNAME="" THEN WNAME="FLD":CPOS
-        WATTR=MAP.REC<MAP$BASE+FLD$ATTR,CPOS>
-        WVALPOS=MAP.REC<MAP$BASE+FLD$VALPOS,CPOS>+0
-        WSUBVALPOS=MAP.REC<MAP$BASE+FLD$SUBVALPOS,CPOS>+0
-        WCONV=MAP.REC<MAP$BASE+FLD$CONV,CPOS>
+        GOSUB SET.WVAR
 *
         IF WRECORD=RECORD$ID THEN
             SRC<-1>='STATUS = UDOGetProperty(KEYOBJ, "':WNAME:'", VALUE, VALUE.TYPE)'
@@ -359,7 +360,7 @@ BUILD.HANDLER:
         END
     NEXT CPOS
 *
-    SRC<-1>="* Fall Though with ID"
+    SRC<-1>="* Fall Though with ID.REC"
     SRC<-1>="*-------------------------------------------------------"
     SRC<-1>="GET.RECORD:"
     SRC<-1>="*-------------------------------------------------------"
@@ -395,7 +396,7 @@ BUILD.HANDLER:
     SRC<-1>="ID.REC=ID"
     IF DELIMITER#"" THEN SRC:="; CONVERT DELIMITER TO @AM IN ID.REC"
 *
-    SRC<-1>='STATUS = UDOGetProperty(INOBJ, "item", ITEMOBJ, ITEMOBJ.TYPE)'
+    SRC<-1>='STATUS = UDOGetProperty(INOBJ, "':ITEMOBJ.NAME:'", ITEMOBJ, ITEMOBJ.TYPE)'
     SRC<-1>="IF STATUS = MVHUB_ERROR THEN"
     SRC<-1>=" STATUS = UDOGetLastError(ERROR.CODE,ERROR.MESSAGE)"
     SRC<-1>=' ERROR.MESSAGE="[key] ":ERROR.MESSAGE'
@@ -410,17 +411,10 @@ BUILD.HANDLER:
     SRC<-1>=" RETURN"
     SRC<-1>="END":SEPARATOR
 *
-    CCNT=DCOUNT(MAP.REC<MAP$BASE+FLD$RECORD>,@VM)
+    CCNT=DCOUNT(MAP.REC<MAP$BASE+FLD$RECORD>,@VM) ; WASSOCTYPE=ASSOCTYPES$NODE
     LAST.ASSOC.ID="!!NEVERMATCHTHIS!!" ; CLOSE.LOOP=@FALSE
     FOR CPOS=1 TO CCNT
-        ASSOC.ID=MAP.REC<MAP$BASE+FLD$ASSOC,CPOS>
-        WRECORD=MAP.REC<MAP$BASE+FLD$RECORD,CPOS>
-        WNAME=MAP.REC<MAP$BASE+FLD$NAME,CPOS> ; IF WNAME="" THEN WNAME="FLD":CPOS
-        WATTR=MAP.REC<MAP$BASE+FLD$ATTR,CPOS>
-        WVALPOS=MAP.REC<MAP$BASE+FLD$VALPOS,CPOS>+0
-        WSUBVALPOS=MAP.REC<MAP$BASE+FLD$SUBVALPOS,CPOS>+0
-        WCONV=MAP.REC<MAP$BASE+FLD$CONV,CPOS>
-        WFLDTYPE=MAP.REC<MAP$BASE+FLD$TYPE,CPOS>
+        GOSUB SET.WVAR
 *
         BEGIN CASE
             CASE ASSOC.ID=KEY.ASSOC      ; * Already Processed
@@ -431,7 +425,6 @@ BUILD.HANDLER:
                     CLOSE.LOOP=@FALSE ; BASE.ATTR=0
                 END
                 WORKOBJ="ITEMOBJ" ; GOSUB ADD.INCODE
-*
             CASE 1
 *
                 IF LAST.ASSOC.ID#ASSOC.ID THEN
@@ -441,9 +434,13 @@ BUILD.HANDLER:
                         CLOSE.LOOP=@FALSE ; BASE.ATTR=0
                     END
 *
-                    LOCATE(ASSOC.ID,MAP.REC,MAP$ASSOC;APOS) ELSE
+                    LOCATE(ASSOC.ID,MAP.REC,MAP$ASSOC;APOS) THEN
+                        WASSOCTYPE=MAP.REC<MAP$ASSOC_TYPE,APOS>
+                        ASSOC.DESCRIPTION=MAP.REC<MAP$ASSOC_DESCRIPTION,APOS>
+                    END ELSE
                         CRT "Lookup Error on Assoc: ":ASSOC.ID
-                        APOS=1
+                        APOS=1 ; WASSOCTYPE=ASSOCTYPES$NODE
+                        ASSOC.DESCRIPTION="Error ":ASSOC.ID
                     END
                     ASSOC.NAME=MAP.REC<MAP$ASSOC_NAME,APOS> ; BASE.ATTR=MAP.REC<MAP$CTRLATTR,APOS>
                     IF BASE.ATTR=0 THEN
@@ -451,12 +448,13 @@ BUILD.HANDLER:
                         SRC<-1>="*":@AM:"* Section for ":ASSOC.NAME:SEPARATOR
                         ASSOC.ONAME=UPCASE(ASSOC.NAME:"OBJ")
                         SRC<-1>='IF UDOGetProperty(ITEMOBJ,"':ASSOC.NAME:'",UPDATEOBJ,UPDATEOBJ.TYPE)#MVHUB_SUCCESS THEN'
-                        SRC<-1>='ERROR.PREPEND="[':ASSOC.NAME:']" ;GOSUB ADD.NODE.ERROR'
+                        SRC<-1>='ERROR.PREPEND="[':ASSOC.NAME:'] " ;GOSUB ADD.NODE.ERROR'
                         SRC<-1>="END ELSE"
                     END ELSE
                         ASSOC.ANAME=UPCASE(ASSOC.NAME:"TABLEARY") ; ASSOC.ONAME=UPCASE(ASSOC.NAME:"OBJ")
 *
-                        SRC<-1>="*":@AM:"* Reset ":ASSOC.NAME:" Table ":SEPARATOR
+                        SRC<-1>="* Reset ":ASSOC.DESCRIPTION:" Table "
+                        IF WASSOCTYPE=ASSOCTYPES$LIST THEN SRC:=" (LIST)":SEPARATOR ELSE SRC:=" (":WASSOCTYPE:")":SEPARATOR
                         LN=""
                         FOR RPOS=1 TO CCNT
 *
@@ -482,11 +480,15 @@ BUILD.HANDLER:
                         SRC<-1>="*"
 *
                         SRC<-1>='IF UDOGetProperty(ITEMOBJ,"':ASSOC.NAME:'",':ASSOC.ANAME:',CHK.TYPE)#MVHUB_SUCCESS THEN'
-                        SRC<-1>='ERROR.PREPEND="[':ASSOC.NAME:']" ;GOSUB ADD.NODE.ERROR'
+                        SRC<-1>='ERROR.PREPEND="[':ASSOC.NAME:'] " ;GOSUB ADD.NODE.ERROR'
                         SRC<-1>="END ELSE"
                         SRC<-1>="LOOP.POS=0"
                         SRC<-1>="LOOP"
-                        SRC<-1>=" STATUS = UDOArrayGetNextItem(":ASSOC.ANAME:",UPDATEOBJ,UPDATEOBJ.TYPE)"
+                        IF WASSOCTYPE#ASSOCTYPES$LIST THEN
+                            SRC<-1>=" STATUS = UDOArrayGetNextItem(":ASSOC.ANAME:",UPDATEOBJ,UPDATEOBJ.TYPE)"
+                        END ELSE
+                            SRC<-1>=" STATUS = UDOArrayGetNextItem(":ASSOC.ANAME:",VALUE,VALUE.TYPE)"
+                        END
                         SRC<-1>="UNTIL STATUS = MVHUB_ERROR DO"
                         SRC<-1>="LOOP.POS+=1"
                         CLOSE.LOOP=@TRUE
@@ -530,28 +532,21 @@ BUILD.HANDLER:
     SRC<-1>="BUILD.REPLY:"
     SRC<-1>="*-------------------------------------------------------"
     SRC<-1>=" STATUS = UDOCreate(MVHUB_OBJECT, KEYOBJ)"
-    SRC<-1>=' STATUS = UDOSetProperty(REPLYOBJ, "key",KEYOBJ)':SEPARATOR
+    SRC<-1>=' STATUS = UDOSetProperty(REPLYOBJ, "':KEYOBJ.NAME:'",KEYOBJ)':SEPARATOR
     SRC<-1>=" ID.REC=ID"
     IF DELIMITER#"" THEN SRC:="; CONVERT DELIMITER TO @AM IN ID.REC"
     SRC<-1>=" STATUS = UDOCreate(MVHUB_OBJECT, ITEMOBJ)"
-    SRC<-1>=' STATUS = UDOSetProperty(REPLYOBJ, "item",ITEMOBJ)':SEPARATOR
+    SRC<-1>=' STATUS = UDOSetProperty(REPLYOBJ, "':ITEMOBJ.NAME:'",ITEMOBJ)':SEPARATOR
 *
     CCNT=DCOUNT(MAP.REC<MAP$BASE+FLD$RECORD>,@VM) ; BASE.ATTR=0
-    LAST.ASSOC.ID="!!NEVERMATCHTHIS!!" ; CLOSE.LOOP=@FALSE
+    LAST.ASSOC.ID="!!NEVERMATCHTHIS!!" ; CLOSE.LOOP=@FALSE ; WASSOCTYPE=ASSOCTYPES$NODE
     FOR CPOS=1 TO CCNT
-        ASSOC.ID=MAP.REC<MAP$BASE+FLD$ASSOC,CPOS>
-        WRECORD=MAP.REC<MAP$BASE+FLD$RECORD,CPOS>
-        WNAME=MAP.REC<MAP$BASE+FLD$NAME,CPOS> ; IF WNAME="" THEN WNAME="FLD":CPOS
-        WATTR=MAP.REC<MAP$BASE+FLD$ATTR,CPOS>
-        WVALPOS=MAP.REC<MAP$BASE+FLD$VALPOS,CPOS>+0
-        WSUBVALPOS=MAP.REC<MAP$BASE+FLD$SUBVALPOS,CPOS>+0
-        WCONV=MAP.REC<MAP$BASE+FLD$CONV,CPOS>
-        WFLDTYPE=MAP.REC<MAP$BASE+FLD$TYPE,CPOS>
+        GOSUB SET.WVAR
 *
         BEGIN CASE
             CASE WRECORD=RECORD$ID
                 IF CLOSE.LOOP THEN
-                    SRC<-1>="END":@AM:"END"
+                    IF WASSOCTYPE#ASSOCTYPES$LIST THEN SRC<-1>="END":@AM:"END"
                     SRC<-1>="NEXT LOOP.POS":SEPARATOR
                     CLOSE.LOOP=@FALSE ; BASE.ATTR=0
                 END
@@ -559,7 +554,7 @@ BUILD.HANDLER:
 *
             CASE ASSOC.ID=BASE.ASSOC
                 IF CLOSE.LOOP THEN
-                    SRC<-1>="END":@AM:"END"
+                    IF WASSOCTYPE#ASSOCTYPES$LIST THEN SRC<-1>="END":@AM:"END"
                     SRC<-1>="NEXT LOOP.POS":SEPARATOR
                     CLOSE.LOOP=@FALSE ; BASE.ATTR=0
                 END
@@ -569,43 +564,54 @@ BUILD.HANDLER:
 *
                 IF LAST.ASSOC.ID#ASSOC.ID THEN
                     IF CLOSE.LOOP THEN
-                        SRC<-1>="END":@AM:"END"
+                        IF WASSOCTYPE#ASSOCTYPES$LIST THEN SRC<-1>="END":@AM:"END"
                         SRC<-1>="NEXT LOOP.POS":SEPARATOR
                         CLOSE.LOOP=@FALSE
                     END
 *
-                    LOCATE(ASSOC.ID,MAP.REC,MAP$ASSOC;APOS) ELSE
+                    LOCATE(ASSOC.ID,MAP.REC,MAP$ASSOC;APOS) THEN
+                        WASSOCTYPE=MAP.REC<MAP$ASSOC_TYPE,APOS>
+                        ASSOC.DESCRIPTION=MAP.REC<MAP$ASSOC_DESCRIPTION,APOS>
+                    END ELSE
                         CRT "Lookup Error on Assoc: ":ASSOC.ID
-                        APOS=1
+                        APOS=1 ; WASSOCTYPE=ASSOCTYPES$NODE
+                        ASSOC.DESCRIPTION="Error ":ASSOC.ID
                     END
                     ASSOC.NAME=MAP.REC<MAP$ASSOC_NAME,APOS> ; BASE.ATTR=MAP.REC<MAP$CTRLATTR,APOS>
-                    IF BASE.ATTR=0 THEN
-                        CLOSE.LOOP=@FALSE
-                        SRC<-1>="*":@AM:"* Section for ":ASSOC.NAME:SEPARATOR
-                        ASSOC.ONAME=UPCASE(ASSOC.NAME:"OBJ")
-                        SRC<-1>="STATUS = UDOCreate(MVHUB_OBJECT,":ASSOC.ONAME:")"
-                        SRC<-1>='STATUS = UDOSetProperty(ITEMOBJ,"':ASSOC.NAME:'",':ASSOC.ONAME:')'
-                    END ELSE
-                        ASSOC.ANAME=UPCASE(ASSOC.NAME:"TABLEARY") ; ASSOC.ONAME=UPCASE(ASSOC.NAME:"OBJ")
 *
-                        SRC<-1>="*":@AM:"* Table for ":ASSOC.NAME:SEPARATOR
+                    BEGIN CASE
+                        CASE BASE.ATTR=0
+                            CLOSE.LOOP=@FALSE
+                            SRC<-1>="*":@AM:"* Section for ":ASSOC.NAME:SEPARATOR
+                            ASSOC.ONAME=UPCASE(ASSOC.NAME:"OBJ")
+                            SRC<-1>="STATUS = UDOCreate(MVHUB_OBJECT,":ASSOC.ONAME:")"
+                            SRC<-1>='STATUS = UDOSetProperty(ITEMOBJ,"':ASSOC.NAME:'",':ASSOC.ONAME:')'
+                        CASE 1
+                            ASSOC.ANAME=UPCASE(ASSOC.NAME:"TABLEARY") ; ASSOC.ONAME=UPCASE(ASSOC.NAME:"OBJ")
 *
-                        SRC<-1>="STATUS = UDOCreate(MVHUB_ARRAY,":ASSOC.ANAME:")"
-                        SRC<-1>='STATUS = UDOSetProperty(ITEMOBJ,"':ASSOC.NAME:'",':ASSOC.ANAME:')'
-                        SRC<-1>="LOOP.CNT=DCOUNT(RECORD<":BASE.ATTR:">,@VM)"
-                        SRC<-1>="FOR LOOP.POS=1 TO LOOP.CNT"
+                            SRC<-1>="*":@AM:"* Table for ":ASSOC.DESCRIPTION
+                            IF WASSOCTYPE=ASSOCTYPES$LIST THEN SRC:=" (LIST)":SEPARATOR ELSE SRC:=" (":WASSOCTYPE:")":SEPARATOR
 *
-                        SRC<-1>="IF UDOCreate(MVHUB_OBJECT,":ASSOC.ONAME:")#MVHUB_SUCCESS THEN"
-                        SRC<-1>='ERROR.PREPEND="[':ASSOC.ONAME:']" ; GOSUB ADD.NODE.ERROR'
-                        SRC<-1>="END ELSE"
-                        SRC<-1>=" IF UDOArrayAppendItem(":ASSOC.ANAME:",":ASSOC.ONAME:")#MVHUB_SUCCESS THEN"
-                        SRC<-1>='ERROR.PREPEND="[':ASSOC.ONAME:']" ; GOSUB ADD.NODE.ERROR'
-                        SRC<-1>=" END ELSE" ; CLOSE.LOOP=@TRUE
-                    END
+                            SRC<-1>="STATUS = UDOCreate(MVHUB_ARRAY,":ASSOC.ANAME:")"
+                            SRC<-1>='STATUS = UDOSetProperty(ITEMOBJ,"':ASSOC.NAME:'",':ASSOC.ANAME:')'
+                            SRC<-1>="LOOP.CNT=DCOUNT(RECORD<":BASE.ATTR:">,@VM)"
+                            SRC<-1>="FOR LOOP.POS=1 TO LOOP.CNT"
+*
+                            IF WASSOCTYPE#ASSOCTYPES$LIST THEN
+                                SRC<-1>="IF UDOCreate(MVHUB_OBJECT,":ASSOC.ONAME:")#MVHUB_SUCCESS THEN"
+                                SRC<-1>='ERROR.PREPEND="[':ASSOC.ONAME:'] " ; GOSUB ADD.NODE.ERROR'
+                                SRC<-1>="END ELSE"
+                                SRC<-1>=" IF UDOArrayAppendItem(":ASSOC.ANAME:",":ASSOC.ONAME:")#MVHUB_SUCCESS THEN"
+                                SRC<-1>='ERROR.PREPEND="[':ASSOC.ONAME:'] " ; GOSUB ADD.NODE.ERROR'
+                                SRC<-1>=" END ELSE"
+                            END
+                            CLOSE.LOOP=@TRUE
+                    END CASE
                 END
 *
                 IF BASE.ATTR#0 THEN WVALPOS="LOOP.POS" ; WSUBVALPOS=0
-                WORKOBJ=ASSOC.ONAME ; GOSUB ADD.OUTCODE
+                IF WASSOCTYPE=ASSOCTYPES$LIST THEN WORKOBJ=ASSOC.ANAME ELSE WORKOBJ=ASSOC.ONAME
+                GOSUB ADD.OUTCODE
 *
         END CASE
 *
@@ -614,7 +620,7 @@ BUILD.HANDLER:
     NEXT CPOS
 *
     IF CLOSE.LOOP THEN
-        SRC<-1>="END":@AM:"END"
+        IF WASSOCTYPE#ASSOCTYPES$LIST THEN SRC<-1>="END":@AM:"END"
         SRC<-1>="NEXT LOOP.POS":SEPARATOR
     END
 *
@@ -635,6 +641,56 @@ BUILD.HANDLER:
         STMT="CATALOG ":SOURCE.FILENAME:" ":HANDLER.NAME
         EXECUTE STMT
     END
+*
+    RETURN
+*-------------------------------------------------------
+SET.WVAR:
+*-------------------------------------------------------
+    ASSOC.ID=MAP.REC<MAP$BASE+FLD$ASSOC,CPOS>
+    WRECORD=MAP.REC<MAP$BASE+FLD$RECORD,CPOS>
+    WNAME=MAP.REC<MAP$BASE+FLD$NAME,CPOS> ; IF WNAME="" THEN WNAME="FLD":CPOS
+    WATTR=MAP.REC<MAP$BASE+FLD$ATTR,CPOS>
+    WVALPOS=MAP.REC<MAP$BASE+FLD$VALPOS,CPOS>+0
+    WSUBVALPOS=MAP.REC<MAP$BASE+FLD$SUBVALPOS,CPOS>+0
+    WCONV=MAP.REC<MAP$BASE+FLD$CONV,CPOS>
+    WFLDTYPE=MAP.REC<MAP$BASE+FLD$TYPE,CPOS>
+    WQUERYITEM=MAP.REC<MAP$BASE+FLD$QUERYITEM,CPOS>
+    WLABEL=MAP.REC<MAP$BASE+FLD$LABEL,CPOS>
+    WLENGTH=MAP.REC<MAP$BASE+FLD$LENGTH,CPOS>
+*
+    RETURN
+*-------------------------------------------------------
+ADD.INCODE:
+*-------------------------------------------------------
+    IF WASSOCTYPE#ASSOCTYPES$LIST THEN
+        SRC<-1>='IF UDOGetProperty(':WORKOBJ:', "':WNAME:'",VALUE,VALUE.TYPE)=MVHUB_SUCCESS THEN'
+    END
+    IF WFLDTYPE=VARTYPE$BOOL THEN
+        SRC<-1>="IF VALUE.TYPE=MVHUB_TRUE THEN VALUE=@TRUE"
+        SRC<-1>="IF VALUE.TYPE=MVHUB_FALSE THEN VALUE=@FALSE"
+    END
+    IF WCONV#"" THEN
+        IF WCONV[1,1]=":" THEN
+            TEMPLATE.ID=FIELD(WCONV[2,20]," ",1) ; TEMPLATE.MODE=TEMPLATE$INBOUND ; GOSUB ADD.TEMPLATE
+        END ELSE
+            SRC<-1>='VALUE=ICONV(VALUE,"':WCONV:'")'
+        END
+    END
+*
+    IF WRECORD=RECORD$BASE THEN
+        ALN="RECORD"
+    END ELSE
+        IF WRECORD=RECORD$WORK THEN ALN="WORK.RECORD" ELSE ALN="ID.REC"
+    END
+    ALN:="<":WATTR
+    IF WVALPOS#0 THEN
+        ALN:=",":WVALPOS
+        IF WSUBVALPOS#0 THEN ALN:=",":WSUBVALPOS
+    END
+    ALN:=">"
+    SRC<-1>=ALN:"=VALUE"
+    IF WFLDTYPE=VARTYPE$NUMBER THEN SRC:="+0"
+    IF WASSOCTYPE#ASSOCTYPES$LIST THEN SRC<-1>="END":SEPARATOR
 *
     RETURN
 *-------------------------------------------------------
@@ -674,39 +730,11 @@ ADD.OUTCODE:
             SRC<-1>="END" ; ALN="trueFalseObj"
     END CASE
 *
-    SRC<-1>='IF UDOSetProperty(':WORKOBJ:', "':WNAME:'",':ALN:')#MVHUB_SUCCESS THEN ERROR.PREPEND="[':WNAME:']" ; GOSUB ADD.NODE.ERROR'
-*
-    RETURN
-*-------------------------------------------------------
-ADD.INCODE:
-*-------------------------------------------------------
-    SRC<-1>='*':@AM:'IF UDOGetProperty(':WORKOBJ:', "':WNAME:'",VALUE,VALUE.TYPE)=MVHUB_SUCCESS THEN'
-    IF WFLDTYPE=VARTYPE$BOOL THEN
-        SRC<-1>="IF VALUE.TYPE=MVHUB_TRUE THEN VALUE=@TRUE"
-        SRC<-1>="IF VALUE.TYPE=MVHUB_FALSE THEN VALUE=@FALSE"
-    END
-    IF WCONV#"" THEN
-        IF WCONV[1,1]=":" THEN
-            TEMPLATE.ID=FIELD(WCONV[2,20]," ",1) ; TEMPLATE.MODE=TEMPLATE$INBOUND ; GOSUB ADD.TEMPLATE
-        END ELSE
-            SRC<-1>='VALUE=ICONV(VALUE,"':WCONV:'")'
-        END
-    END
-*
-    IF WRECORD=RECORD$BASE THEN
-        ALN="RECORD"
+    IF WASSOCTYPE=ASSOCTYPES$LIST THEN
+        SRC<-1>=' IF UDOArrayAppendItem(':WORKOBJ:',':ALN:')#MVHUB_SUCCESS THEN ERROR.PREPEND="[':WNAME:'] " ; GOSUB ADD.NODE.ERROR'
     END ELSE
-        IF WRECORD=RECORD$WORK THEN ALN="WORK.RECORD" ELSE ALN="ID.REC"
+        SRC<-1>=' IF UDOSetProperty(':WORKOBJ:', "':WNAME:'",':ALN:')#MVHUB_SUCCESS THEN ERROR.PREPEND="[':WNAME:'] " ; GOSUB ADD.NODE.ERROR'
     END
-    ALN:="<":WATTR
-    IF WVALPOS#0 THEN
-        ALN:=",":WVALPOS
-        IF WSUBVALPOS#0 THEN ALN:=",":WSUBVALPOS
-    END
-    ALN:=">"
-    SRC<-1>=ALN:"=VALUE"
-    IF WFLDTYPE=VARTYPE$NUMBER THEN SRC:="+0"
-    SRC<-1>="END"
 *
     RETURN
 *-------------------------------------------------------
@@ -774,6 +802,7 @@ UPDATE.MAP:
     FOR APOS=1 TO ACNT
         ADD.BASE=((APOS-1)*FLD$OFFSET)+MAP$BASE
         CCNT=DCOUNT(WK.MAP<ADD.BASE+FLD$RECORD>,@VM)
+        IF CCNT=1 THEN WK.MAP<MAP$ASSOC_TYPE,APOS>=ASSOCTYPES$LIST ELSE WK.MAP<MAP$ASSOC_TYPE,APOS>=ASSOCTYPES$NODE
         FOR CPOS=1 TO CCNT
             NCPOS+=1
             FOR FPOS=1 TO FLD$OFFSET
@@ -792,6 +821,7 @@ UPDATE.MAP:
             MAP.REC<MAP$ASSOC_NAME,NAPOS>=WK.MAP<MAP$ASSOC_NAME,APOS>
             MAP.REC<MAP$ASSOC_DESCRIPTION,NAPOS>=WK.MAP<MAP$ASSOC_DESCRIPTION,APOS>
             MAP.REC<MAP$CTRLATTR,NAPOS>=WK.MAP<MAP$CTRLATTR,APOS>
+            MAP.REC<MAP$ASSOC_TYPE,NAPOS>=WK.MAP<MAP$ASSOC_TYPE,APOS>
         END
     NEXT APOS
 *

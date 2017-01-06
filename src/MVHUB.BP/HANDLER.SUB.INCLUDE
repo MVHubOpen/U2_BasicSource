@@ -1,11 +1,7 @@
 *-------------------------------------------------------
-* Cypress Business Solutions
-* P.O. Box 1637
-* Woodstock, GA 30188
-* (678) 494-9353
-* All Rights Reserved @ 2010
-* System : e-CAT
-* Date   : 08/24/2010
+* mvHubOpen, copyright (c) by James F Thompson
+* Distributed under an MIT license:
+*                    https://opensource.org/licenses/MIT
 *-------------------------------------------------------
 * Standard/Required Subroutine Define:
 * {SERVICE}.HANDLER.SUB(REQUEST.HEADER,REQUEST,REPLY.HEADER,REPLY)

@@ -1,9 +1,16 @@
 *-------------------------------------------------------
-* Cypress Business Solutions
-* P.O. Box 1637
-* Woodstock, GA 30188
-* (678) 494-9353
-* All Rights Reserved @ 2010
-* System : e-CAT
-* Date   : 08/24/2010
+* mvHubOpen, copyright (c) by James F Thompson
+* Distributed under an MIT license:
+*                    https://opensource.org/licenses/MIT
 *-------------------------------------------------------
+    IF UNASSIGNED(HANDLER.SUB.NAME) THEN HANDLER.SUB.NAME="UNKNOWN"
+    MVHUB_PROCESS=HANDLER.SUB.NAME:"_HANDLER"
+    EQU PROCESS LIT "(MVHUB_PROCESS)"
+*
+    MVHUB_USER=@LOGNAME
+    IF INDEX(MVHUB_USER,"\",1) THEN MVHUB_USER=FIELD(MVHUB_USER,"\",2)
+    EQU USER LIT "(MVHUB_USER)"
+*
+    MVHUB_GROUPS="ADMIN":@AM:"DEFAULT":@AM:"USER"
+    EQU GROUPS LIT "(MVHUB_GROUP)"
+*
