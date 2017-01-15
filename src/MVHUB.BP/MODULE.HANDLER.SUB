@@ -1,0 +1,251 @@
+    SUBROUTINE MODULE.HANDLER.SUB(REQUEST.HEADER,REQUEST,REPLY.HEADER,REPLY)
+*-------------------------------------------------------
+* MVHub for Mer Group
+* Created 18:48:09 05 JAN 2017
+*-------------------------------------------------------
+    HANDLER.SUB.NAME = "MODULE"
+    INCLUDE MVHUB.BP HANDLER.SUB.INCLUDE
+    INCLUDE MVHUB.BP PROFILE.INCLUDE
+    INCLUDE MVHUB.BP MVHUB.MAP.INCLUDE
+    OPEN "MVHUB.LOG" TO F.WLOG THEN
+        WRITE REQUEST.HEADER ON F.WLOG,HANDLER.SUB.NAME:"_REQUEST_HEADER"
+        WRITE REQUEST ON F.WLOG,HANDLER.SUB.NAME:"_REQUEST"
+    END
+*
+    REPLY.STATUS="200" ; REPLY.TYPE="text/plain"
+    REPLY=""
+    IF METHOD#"GET" THEN
+        ýREPLY="Only GET Supported"
+        RETURN
+    END
+*
+    OPEN "MVHUB.MAP" TO F.MAP ELSE
+        REPLY='Unable to open "MVHUB.MAP"'
+        RETURN
+    END
+*
+    OPEN "MVHUB.TEMPLATE" TO F.TEMPLATE ELSE
+        REPLY='Unable to open "MVHUB.TEMPLATE"'
+        RETURN
+    END
+*
+    OPEN "MVHUB.MODULE" TO F.MODULE ELSE
+        REPLY="UNABLE TO OPEN MODULE FILE"
+        RETURN
+    END
+*
+    OPEN "MVHUB.MODULE,BASE" TO F.BASE ELSE
+        REPLY="UNABLE TO OPEN MODULE BASE FILE"
+        RETURN
+    END
+*
+    MODULE.ID=UPCASE(TRIM(URL.TABLE<1>))
+    IF MODULE.ID[3]=".TS" THEN MODULE.ID=MODULE.ID[1,LEN(MODULE.ID)-3]
+    READ MODULE.REC FROM F.MODULE,MODULE.ID ELSE
+        REPLY="Missing Module ":MODULE.ID:", Please Create Module"
+        RETURN
+    END
+*
+    LOCATE("A2",POST.TAB,1;POS) THEN
+        ADD.A2=(POST.TAB<3,POS>="Y")
+    END ELSE
+        ADD.A2=@FALSE
+    END
+*
+    READ BASE.JS FROM F.BASE,MODULE.ID ELSE BASE.JS=""
+*
+    BLANK=@AM ; SECTION=@AM ; NSECTION=SECTION:@AM
+    PAD=SPACE(3)
+*
+    MODULE.NAMESPACE=MODULE.REC<MODULE$JSNAME>
+    TS="// ":MODULE.ID:" ":MODULE.REC<MAP$TITLE>
+    TS<-1>="// Created ":TIMEDATE()
+    IF ADD.A2 THEN
+        TS<-1>=NSECTION:"import { Injectable }    from '@angular/core';"
+        TS<-1>="import { Headers, Http, Response } from '@angular/http';":BLANK
+        TS<-1>="import 'rxjs/add/operator/toPromise';"
+    END
+    TS<-1>=NSECTION:"//"
+    TS<-1>="// ":MODULE.ID:" - ":MODULE.REC<MAP$TITLE>
+    TS<-1>="//"
+    TS<-1>="namespace ":MODULE.NAMESPACE:" {"
+*
+    MAP.CNT=DCOUNT(MODULE.REC<MODULE$BLDLST_MAPIID>,@VM)
+    FOR MAP.POS=1 TO MAP.CNT
+        MAP.ID=MODULE.REC<MODULE$BLDLST_MAPIID,MAP.POS>
+        READ MAP.REC FROM F.MAP,MAP.ID THEN
+            TITLE=MAP.REC<MAP$TITLE>
+*
+            MAP.VERSION=MAP.REC<MAP$MAP.VERSION> ; WASSOCTYPE=ASSOCTYPES$NODE
+            IF MAP.VERSION#"" THEN
+                CVERSION=FIELD(MAP.VERSION,"_",1,3)
+                XVERSION=FIELD(MAP$VERSION.NUMBER,"_",1,3)
+                IF CVERSION#XVERSION THEN
+                    REPLY="Existing Map is incompatible with the version of Create MVHub"
+                    REPLY=CHAR(10):"  Map Version : ":MAP.VERSION
+                    REPLY=CHAR(10):"Build Version : ":MAP$VERSION.NUMBER
+                    RETURN
+                END
+            END
+*
+            ASSOCIATED.NAME=""
+            WORK.NAME=MAP.ID ; GOSUB BLD.JSON.NAME
+            MAP.NAMESPACE=JSON.NAME
+*
+            TS<-1>=SECTION:"//"
+            TS<-1>="// ":MAP.ID:" - ":MAP.REC<MAP$TITLE>
+            TS<-1>="//"
+            TS<-1>=PAD:"namespace ":MAP.NAMESPACE:" {"
+*
+* Build Interface
+*
+            TSI=PAD2:"export interface IItem {"
+            TSK=PAD2:"export interface IKey {"
+            TSA=""
+            CCNT=DCOUNT(MAP.REC<MAP$BASE+FLD$RECORD>,@VM)
+            LAST.WASSOC.ID="!!NEVERMATCHTHIS!!" ; WORK.INTERFACE=""
+            CLOSE.SECTION=@FALSE
+*
+            ATAB=KEY.ASSOC:@VM:BASE.ASSOC
+            ATAB<2>="IKey":@VM:"IItem"
+*
+            FOR CPOS=1 TO CCNT
+                GOSUB SET.WVAR
+                BEGIN CASE
+                    CASE WFLDTYPE=VARTYPE$NUMBER
+                        CTYPE="number"
+                    CASE WFLDTYPE=VARTYPE$BOOL
+                        CTYPE="boolean"
+                    CASE 1
+                        CTYPE="string"
+                END CASE
+*
+                BEGIN CASE
+                    CASE WASSOC.ID=KEY.ASSOC
+                        TSK<-1>=PAD3:WNAME:":":CTYPE:";"
+                    CASE WASSOC.ID=BASE.ASSOC
+                        TSI<-1>=PAD3:WNAME:":":CTYPE:";"
+                    CASE 1
+                        IF LAST.WASSOC.ID#WASSOC.ID THEN
+*
+                            IF CLOSE.SECTION THEN
+                                TSA<-1>=SECTION:PAD2:"} // End Of ":WORK.INTERFACE:" Interface"
+                                CLOSE.SECTION=@FALSE
+                            END
+*
+                            LOCATE(WASSOC.ID,MAP.REC,MAP$ASSOC;ASSOC.POS) ELSE
+                                REPLY=WASSOC.ID:" missing in Map ":MAP.ID
+                                RETURN
+                            END
+*
+                            ASSOC.NAME=MAP.REC<MAP$ASSOC_NAME,ASSOC.POS>
+                            WORK.INTERFACE="I":UPCASE(ASSOC.NAME[1,1]):ASSOC.NAME[2,LEN(ASSOC.NAME)]
+*
+                            LOCATE(WASSOC.ID,ATAB,1;IPOS) ELSE
+                                IPOS=DCOUNT(ATAB<1>,@VM)+1
+                                ATAB<1,IPOS>=WASSOC.ID
+                                ATAB<2,IPOS>=WORK.INTERFACE
+                                ATAB<3,IPOS>=ASSOC.NAME
+                            END
+*
+                            TSA<-1>=SECTION:PAD2:"export interface ":WORK.INTERFACE:" {"
+                            CLOSE.SECTION=@TRUE
+                            TSI<-1>=PAD3:ASSOC.NAME:":":WORK.INTERFACE:"[];"
+                        END
+                        TSA<-1>=PAD3:WNAME:":":CTYPE:";"
+                END CASE
+*
+                LAST.WASSOC.ID=WASSOC.ID
+            NEXT CPOS
+            IF CLOSE.SECTION THEN
+                TSA<-1>=SECTION:PAD2:"} // End Of ":WORK.INTERFACE:" Interface"
+                CLOSE.SECTION=@FALSE
+            END
+*
+            IF TSA#"" THEN TS<-1>=TSA
+            TS<-1>=SECTION:TSI:@AM:PAD2:"} // End Of Item Interface"
+            TS<-1>=SECTION:TSK:@AM:PAD2:"} // End Of Key Interface"
+*
+* Build Class
+*
+            TSI=PAD3:"private _data: ":MAP.NAMESPACE:".IItem;"
+            TSI.CONS=""
+*
+            TSK=""
+            IF ADD.A2 THEN TSK=PAD2:"@Injectable()"
+            TSK<-1>=PAD2:"export class key {"
+            TSK<-1>=PAD3:"private _data: ":MAP.NAMESPACE:".IKey;"
+            TSK<-1>=PAD3:'SERVICE_PATH:() =>string = function() {return "':MAP.ID:'"};'
+*
+            TSA=""
+            CCNT=DCOUNT(MAP.REC<MAP$BASE+FLD$RECORD>,@VM)
+            LAST.WASSOC.ID="!!NEVERMATCHTHIS!!" ; WORK.INTERFACE=""
+            CLOSE.SECTION=@FALSE
+*
+            FOR CPOS=1 TO CCNT
+                GOSUB SET.WVAR
+*
+                IF WCONV[1,1]=":" THEN
+                    READV CHK FROM F.TEMPLATE,WCONV[2,LEN(WCONV)],TEMPLATE$JSDEFAULT THEN
+                        IF CHK#"" THEN WDEFAULT=CHK
+                    END
+                END
+*
+                BEGIN CASE
+                    CASE WFLDTYPE=VARTYPE$NUMBER
+                        CTYPE="number"
+                        IF WDEFAULT#"" THEN WDEFAULT+=0
+                    CASE WFLDTYPE=VARTYPE$BOOL
+                        CTYPE="boolean"
+                        IF WDEFAULT#"" THEN
+                            WDEFAULT=DOWNCASE(WDEFAULT)
+                            IF WDEFAULT#"true" AND WDEFAULT#"false" THEN WDEFAULT=""
+                        END
+                    CASE 1
+                        CTYPE="string"
+                        IF WDEFAULT#"" THEN WDEFAULT='"':WDEFAULT:'"'
+                END CASE
+*
+                BEGIN CASE
+                    CASE WASSOC.ID=KEY.ASSOC
+                        TSK<-1>=SECTION:PAD3:"get ":WNAME:"():":CTYPE:" {return this._data.":WNAME:";}"
+                        TSK<-1>=PAD3:"set ":WNAME:"(":WNAME:":":CTYPE:") {this._data.":WNAME:" = ":WNAME:";}"
+                    CASE WASSOC.ID=BASE.ASSOC
+                        TSI<-1>=SECTION:PAD3:"get ":WNAME:"():":CTYPE:" {return this._data.":WNAME:";}"
+                        TSI<-1>=PAD3:"set ":WNAME:"(":WNAME:":":CTYPE:") {this._data.":WNAME:" = ":WNAME:";}"
+                        IF WDEFAULT#"" THEN TSI.CONS<-1>=PAD4:"this._data.":WNAME:"= ":WDEFAULT:";"
+                    CASE 1
+                        IF LAST.WASSOC.ID#WASSOC.ID THEN
+                            LOCATE(WASSOC.ID,ATAB,1;IPOS) THEN
+                                WORK.INTERFACE=ATAB<2,IPOS>
+                                ASSOC.NAME=ATAB<3,IPOS>
+                                TSI<-1>=SECTION:PAD3:"get ":ASSOC.NAME:"():":WORK.INTERFACE:"[] {return this._data.":ASSOC.NAME:";}"
+                                TSI<-1>=PAD3:"set ":ASSOC.NAME:"(":ASSOC.NAME:":":WORK.INTERFACE:"[]) {this._data.":ASSOC.NAME:" = ":ASSOC.NAME:";}"
+                                TSI.CONS<-1>=PAD4:"this._data.":ASSOC.NAME:"= new Array();"
+                            END
+                        END
+*                        IF WDEFAULT#"" THEN TSI.CONS<-1>=PAD4:"this._data.":WNAME:"= ":WDEFAULT:";"
+                END CASE
+*
+                LAST.WASSOC.ID=WASSOC.ID
+            NEXT CPOS
+*
+            IF TSI.CONS#"" THEN TSI=INSERT(TSI,1;PAD3:"constructor() { ":@AM:TSI.CONS:@AM:PAD3:" }")
+            TSI=INSERT(TSI,1;PAD2:"export class item {")
+            IF ADD.A2 THEN TSI=INSERT(TSI,1;PAD2:"@Injectable()")
+*
+            IF TSA#"" THEN TS<-1>=SECTION:TSA
+            TS<-1>=SECTION:TSI:@AM:PAD2:"} // End Of Item Class"
+            TS<-1>=SECTION:TSK:@AM:PAD2:"} // End Of Key Class "
+*
+            TS<-1>=SECTION:PAD:"} // End of ":MAP.NAMESPACE:" Namespace"
+        END
+*
+    NEXT MAP.POS
+*
+    TS<-1>=SECTION:"} // End of ":MODULE.NAMESPACE:" Namespace"
+*
+    REPLY.STATUS="200" ; REPLY.TYPE="application/x-typescript"
+    REPLY=CHANGE(TS,@AM,CHAR(10))
+*
+    RETURN

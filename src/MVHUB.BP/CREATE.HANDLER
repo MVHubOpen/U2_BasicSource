@@ -8,9 +8,6 @@
     INCLUDE MVHUB.BP MVHUB.MAP.INCLUDE
     EQUATE NOTHING LIT '("")'
 *
-    EQUATE NAME.REMOVE LIT '@VM:"-/_"'
-    NAME.REMOVE.SPACE = SPACE(LEN(NAME.REMOVE))
-*
     LOCATE("/BUILDMAP",SEN;BUILD.POS) THEN
         BUILD.MAP=@TRUE
         SEN=DELETE(SEN,BUILD.POS)
@@ -36,12 +33,12 @@
         VERBOSE=@FALSE
     END
 *
-    MAP.NAME=TRIM(SEN<2>) ; SOURCE.FILENAME=TRIM(SEN<3>)
+    MAP.ID=TRIM(SEN<2>) ; SOURCE.FILENAME=TRIM(SEN<3>)
     DATA.FILENAME=TRIM(SEN<4>)
 *
     IF SOURCE.FILENAME="" THEN SOURCE.FILENAME="MVHUB.BP"
-    IF DATA.FILENAME="" THEN DATA.FILENAME=MAP.NAME
-    MAP.NAME=UPCASE(MAP.NAME)
+    IF DATA.FILENAME="" THEN DATA.FILENAME=MAP.ID
+    MAP.ID=UPCASE(MAP.ID)
 *
     OPEN "MVHUB.MAP" TO F.MAP ELSE
         CRT 'Unable to open "MVHUB.MAP"'
@@ -52,7 +49,7 @@
         STOP
     END
 *
-    READ MAP.REC FROM F.MAP,MAP.NAME ELSE
+    READ MAP.REC FROM F.MAP,MAP.ID ELSE
         MAP.REC="" ; BUILD.MAP=@TRUE
     END
     TITLE=MAP.REC<MAP$TITLE>
@@ -84,18 +81,34 @@
 *
     GOSUB BUILD.HANDLER
 *
+    IF MAP.REC<MAP$MODULE>#"" THEN
+        OPEN "MVHUB.MODULE" TO F.MODULE THEN
+            MODULE.ID=MAP.REC<MAP$MODULE>
+            READU MODULE.REC FROM F.MODULE,MODULE.ID THEN
+                LOCATE(MAP.ID,MODULE.REC,MODULE$BLDLST_MAPIID;IPOS) ELSE
+                    MODULE.REC<MODULE$BLDLST_MAPIID,-1>=MAP.ID
+                    WRITE MODULE.ID ON F.MODULE,MODULE.ID
+                END
+            END ELSE
+                CRT "Please Create Module and Recreate Handler"
+            END
+        END ELSE
+            CRT "Please Install Module Interface"
+        END
+    END
+*
     STOP
 *-------------------------------------------------------
 BUILD.HANDLER:
 *-------------------------------------------------------
-    HANDLER.NAME=MAP.NAME:".HANDLER.SUB"
+    HANDLER.NAME=MAP.ID:".HANDLER.SUB"
     SRC="SUBROUTINE ":HANDLER.NAME:"(REQUEST.HEADER,REQUEST,REPLY.HEADER,REPLY)"
     SRC<-1>="*-------------------------------------------------------"
     SRC<-1>="* ":TITLE
     SRC<-1>="* Created ":TIMEDATE()
     SRC<-1>="*-------------------------------------------------------"
 *
-    SRC<-1>='HANDLER.SUB.NAME = "':MAP.NAME:'"'
+    SRC<-1>='HANDLER.SUB.NAME = "':MAP.ID:'"'
     SRC<-1>="INCLUDE MVHUB.BP HANDLER.SUB.INCLUDE"
     SRC<-1>="INCLUDE MVHUB.BP PROFILE.INCLUDE"
 *
@@ -345,7 +358,7 @@ BUILD.HANDLER:
     SRC<-1>="  END"
 *
     CCNT=DCOUNT(MAP.REC<MAP$BASE+FLD$RECORD>,@VM)
-    LAST.ASSOC.ID="!!NEVERMATCHTHIS!!" ; CLOSE.LOOP=@FALSE
+    LAST.WASSOC.ID="!!NEVERMATCHTHIS!!" ; CLOSE.LOOP=@FALSE
     FOR CPOS=1 TO CCNT
         GOSUB SET.WVAR
 *
@@ -412,13 +425,13 @@ BUILD.HANDLER:
     SRC<-1>="END":SEPARATOR
 *
     CCNT=DCOUNT(MAP.REC<MAP$BASE+FLD$RECORD>,@VM) ; WASSOCTYPE=ASSOCTYPES$NODE
-    LAST.ASSOC.ID="!!NEVERMATCHTHIS!!" ; CLOSE.LOOP=@FALSE
+    LAST.WASSOC.ID="!!NEVERMATCHTHIS!!" ; CLOSE.LOOP=@FALSE
     FOR CPOS=1 TO CCNT
         GOSUB SET.WVAR
 *
         BEGIN CASE
-            CASE ASSOC.ID=KEY.ASSOC      ; * Already Processed
-            CASE ASSOC.ID=BASE.ASSOC
+            CASE WASSOC.ID=KEY.ASSOC     ; * Already Processed
+            CASE WASSOC.ID=BASE.ASSOC
                 IF CLOSE.LOOP THEN
                     IF BASE.ATTR#0 THEN SRC<-1>="REPEAT"
                     SRC<-1>="END":SEPARATOR
@@ -427,20 +440,20 @@ BUILD.HANDLER:
                 WORKOBJ="ITEMOBJ" ; GOSUB ADD.INCODE
             CASE 1
 *
-                IF LAST.ASSOC.ID#ASSOC.ID THEN
+                IF LAST.WASSOC.ID#WASSOC.ID THEN
                     IF CLOSE.LOOP THEN
                         IF BASE.ATTR#0 THEN SRC<-1>="REPEAT"
                         SRC<-1>="END":SEPARATOR
                         CLOSE.LOOP=@FALSE ; BASE.ATTR=0
                     END
 *
-                    LOCATE(ASSOC.ID,MAP.REC,MAP$ASSOC;APOS) THEN
+                    LOCATE(WASSOC.ID,MAP.REC,MAP$ASSOC;APOS) THEN
                         WASSOCTYPE=MAP.REC<MAP$ASSOC_TYPE,APOS>
                         ASSOC.DESCRIPTION=MAP.REC<MAP$ASSOC_DESCRIPTION,APOS>
                     END ELSE
-                        CRT "Lookup Error on Assoc: ":ASSOC.ID
+                        CRT "Lookup Error on Assoc: ":WASSOC.ID
                         APOS=1 ; WASSOCTYPE=ASSOCTYPES$NODE
-                        ASSOC.DESCRIPTION="Error ":ASSOC.ID
+                        ASSOC.DESCRIPTION="Error ":WASSOC.ID
                     END
                     ASSOC.NAME=MAP.REC<MAP$ASSOC_NAME,APOS> ; BASE.ATTR=MAP.REC<MAP$CTRLATTR,APOS>
                     IF BASE.ATTR=0 THEN
@@ -458,7 +471,7 @@ BUILD.HANDLER:
                         LN=""
                         FOR RPOS=1 TO CCNT
 *
-                            RASSOC.ID=MAP.REC<MAP$BASE+FLD$ASSOC,RPOS>
+                            RWASSOC.ID=MAP.REC<MAP$BASE+FLD$ASSOC,RPOS>
                             RWRECORD=MAP.REC<MAP$BASE+FLD$RECORD,RPOS>
                             RWNAME=MAP.REC<MAP$BASE+FLD$NAME,RPOS>
                             RWATTR=MAP.REC<MAP$BASE+FLD$ATTR,RPOS>
@@ -466,7 +479,7 @@ BUILD.HANDLER:
                             RWSUBVALPOS=MAP.REC<MAP$BASE+FLD$SUBVALPOS,RPOS>+0
                             RUBASE="RECORD" ; IF WRECORD="W" THEN UBASE="WORK.RECORD"
 *
-                            IF RASSOC.ID=ASSOC.ID THEN
+                            IF RWASSOC.ID=WASSOC.ID THEN
                                 IF LN#"" THEN LN:="; "
                                 LN:=RUBASE:"<":RWATTR
                                 IF RWVALPOS#0 THEN LN:=",":RWVALPOS
@@ -500,7 +513,7 @@ BUILD.HANDLER:
 *
         END CASE
 *
-        LAST.ASSOC.ID=ASSOC.ID
+        LAST.WASSOC.ID=WASSOC.ID
 *
     NEXT CPOS
 *
@@ -539,7 +552,7 @@ BUILD.HANDLER:
     SRC<-1>=' STATUS = UDOSetProperty(REPLYOBJ, "':ITEMOBJ.NAME:'",ITEMOBJ)':SEPARATOR
 *
     CCNT=DCOUNT(MAP.REC<MAP$BASE+FLD$RECORD>,@VM) ; BASE.ATTR=0
-    LAST.ASSOC.ID="!!NEVERMATCHTHIS!!" ; CLOSE.LOOP=@FALSE ; WASSOCTYPE=ASSOCTYPES$NODE
+    LAST.WASSOC.ID="!!NEVERMATCHTHIS!!" ; CLOSE.LOOP=@FALSE ; WASSOCTYPE=ASSOCTYPES$NODE
     FOR CPOS=1 TO CCNT
         GOSUB SET.WVAR
 *
@@ -552,7 +565,7 @@ BUILD.HANDLER:
                 END
                 WORKOBJ="KEYOBJ" ; GOSUB ADD.OUTCODE
 *
-            CASE ASSOC.ID=BASE.ASSOC
+            CASE WASSOC.ID=BASE.ASSOC
                 IF CLOSE.LOOP THEN
                     IF WASSOCTYPE#ASSOCTYPES$LIST THEN SRC<-1>="END":@AM:"END"
                     SRC<-1>="NEXT LOOP.POS":SEPARATOR
@@ -562,20 +575,20 @@ BUILD.HANDLER:
 *
             CASE 1
 *
-                IF LAST.ASSOC.ID#ASSOC.ID THEN
+                IF LAST.WASSOC.ID#WASSOC.ID THEN
                     IF CLOSE.LOOP THEN
                         IF WASSOCTYPE#ASSOCTYPES$LIST THEN SRC<-1>="END":@AM:"END"
                         SRC<-1>="NEXT LOOP.POS":SEPARATOR
                         CLOSE.LOOP=@FALSE
                     END
 *
-                    LOCATE(ASSOC.ID,MAP.REC,MAP$ASSOC;APOS) THEN
+                    LOCATE(WASSOC.ID,MAP.REC,MAP$ASSOC;APOS) THEN
                         WASSOCTYPE=MAP.REC<MAP$ASSOC_TYPE,APOS>
                         ASSOC.DESCRIPTION=MAP.REC<MAP$ASSOC_DESCRIPTION,APOS>
                     END ELSE
-                        CRT "Lookup Error on Assoc: ":ASSOC.ID
+                        CRT "Lookup Error on Assoc: ":WASSOC.ID
                         APOS=1 ; WASSOCTYPE=ASSOCTYPES$NODE
-                        ASSOC.DESCRIPTION="Error ":ASSOC.ID
+                        ASSOC.DESCRIPTION="Error ":WASSOC.ID
                     END
                     ASSOC.NAME=MAP.REC<MAP$ASSOC_NAME,APOS> ; BASE.ATTR=MAP.REC<MAP$CTRLATTR,APOS>
 *
@@ -615,7 +628,7 @@ BUILD.HANDLER:
 *
         END CASE
 *
-        LAST.ASSOC.ID=ASSOC.ID
+        LAST.WASSOC.ID=WASSOC.ID
 *
     NEXT CPOS
 *
@@ -641,22 +654,6 @@ BUILD.HANDLER:
         STMT="CATALOG ":SOURCE.FILENAME:" ":HANDLER.NAME
         EXECUTE STMT
     END
-*
-    RETURN
-*-------------------------------------------------------
-SET.WVAR:
-*-------------------------------------------------------
-    ASSOC.ID=MAP.REC<MAP$BASE+FLD$ASSOC,CPOS>
-    WRECORD=MAP.REC<MAP$BASE+FLD$RECORD,CPOS>
-    WNAME=MAP.REC<MAP$BASE+FLD$NAME,CPOS> ; IF WNAME="" THEN WNAME="FLD":CPOS
-    WATTR=MAP.REC<MAP$BASE+FLD$ATTR,CPOS>
-    WVALPOS=MAP.REC<MAP$BASE+FLD$VALPOS,CPOS>+0
-    WSUBVALPOS=MAP.REC<MAP$BASE+FLD$SUBVALPOS,CPOS>+0
-    WCONV=MAP.REC<MAP$BASE+FLD$CONV,CPOS>
-    WFLDTYPE=MAP.REC<MAP$BASE+FLD$TYPE,CPOS>
-    WQUERYITEM=MAP.REC<MAP$BASE+FLD$QUERYITEM,CPOS>
-    WLABEL=MAP.REC<MAP$BASE+FLD$LABEL,CPOS>
-    WLENGTH=MAP.REC<MAP$BASE+FLD$LENGTH,CPOS>
 *
     RETURN
 *-------------------------------------------------------
@@ -846,7 +843,7 @@ UPDATE.MAP:
         NEXT APOS
     NEXT OAPOS
 *
-    WRITE MAP.REC ON F.MAP,MAP.NAME
+    WRITE MAP.REC ON F.MAP,MAP.ID
 *
     RETURN
 *-------------------------------------------------------
@@ -925,32 +922,5 @@ NORMALIZE.CONV:
         CASE CONV[1,1]="P"
             CONV=""
     END CASE
-*
-    RETURN
-*-------------------------------------------------------
-BLD.JSON.NAME:
-*-------------------------------------------------------
-    CONVERT NAME.REMOVE TO NAME.REMOVE.SPACE IN WORK.NAME
-    WORK.NAME=TRIM(WORK.NAME)
-    IF UPCASE(ASSOCIATED.NAME)=UPCASE(WORK.NAME[1,LEN(ASSOCIATED.NAME)]) THEN
-        WORK.NAME=TRIM(WORK.NAME[LEN(ASSOCIATED.NAME)+1,LEN(WORK.NAME)])
-    END
-*
-    JSON.NAME="" ; UPCASEIT=@FALSE
-    WLEN=LEN(WORK.NAME)
-    FOR WPOS=1 TO WLEN
-        WC=WORK.NAME[WPOS,1]
-        BEGIN CASE
-            CASE WC=" "
-                UPCASEIT=@TRUE
-            CASE NOT(ALPHA(WC))
-                IF NUM(WC) AND JSON.NAME#"" THEN JSON.NAME:=WC
-            CASE UPCASEIT
-                JSON.NAME:=UPCASE(WC)
-                UPCASEIT=@FALSE
-            CASE 1
-                JSON.NAME:=DOWNCASE(WC)
-        END CASE
-    NEXT WPOS
 *
     RETURN
