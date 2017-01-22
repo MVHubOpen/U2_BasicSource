@@ -3,6 +3,7 @@
 * Distributed under an MIT license:
 *                    https://opensource.org/licenses/MIT
 *-------------------------------------------------------
+    VERSION="17.01.04"
     INCLUDE MVHUB.BP MVHUB.MAP.INCLUDE
 *
     OPEN "MVHUB.BP" TO F.BP ELSE ABORT 201,"MVHUB.BP"

@@ -1,0 +1,257 @@
+      SUBROUTINE MVHUB.TEMPLATE.HANDLER.SUB(REQUEST.HEADER,REQUEST,REPLY.HEADER,REPLY)
+*-------------------------------------------------------
+* MVHub for Mvhub Template
+* Created 20:38:23 21 JAN 2017
+*-------------------------------------------------------
+      HANDLER.SUB.NAME = "MVHUB.TEMPLATE"
+      INCLUDE MVHUB.BP HANDLER.SUB.INCLUDE
+      INCLUDE MVHUB.BP PROFILE.INCLUDE
+      OPEN "MVHUB.LOG" TO F.WLOG THEN
+         WRITE REQUEST.HEADER ON F.WLOG,HANDLER.SUB.NAME:"_REQUEST_HEADER"
+         WRITE REQUEST ON F.WLOG,HANDLER.SUB.NAME:"_REQUEST"
+      END
+*
+      REPLY.STATUS="200" ; REPLY.TYPE="application/json"
+      IF UDOCreate(MVHUB_OBJECT, REPLYOBJ)#MVHUB_SUCCESS THEN ABORT
+*
+      FILENAME="MVHUB.TEMPLATE"
+      OPEN FILENAME TO @STDFIL ELSE
+         ERROR.CODE=500
+         ERROR.MESSAGE="Unknow Action :":ACTION
+         REPLY.STATUS=500
+         GOSUB ADD.ERROR
+         RETURN
+      END
+*
+      BEGIN CASE
+         CASE METHOD="GET"
+            IF URL.TABLE<1>="!QUERY" THEN
+               QUERY.LIST=DELETE(URL.TABLE,1)
+               ACTION="QUERY"
+               GOSUB MAPPED.QUERY
+            END ELSE
+               ID.REC=TRIM(URL.TABLE,"/") ; CONVERT "/" TO @AM IN ID.REC
+               ACTION="READ"
+               GOSUB GET.RECORD
+               IF REPLY.STATUS=200 THEN
+                  GOSUB BUILD.REPLY
+               END
+*
+            END
+*
+            IF UDOWrite(REPLYOBJ, MVHUB_FORMAT_JSON, REPLY)#MVHUB_SUCCESS THEN
+               REPLY.STATUS=409
+               REPLY='{"errors":[{"code": 409,"message":"Unable to render document"}]}'
+            END
+*
+         CASE METHOD="POST"
+            IF UDORead(REQUEST,MVHUB_FORMAT_JSON,INOBJ)#MVHUB_SUCCESS THEN
+               GOSUB ADD.NODE.ERROR
+            END ELSE
+               IF UDOGetProperty(INOBJ, "action", ACTION, ACTION.TYPE)#MVHUB_SUCCESS THEN
+                  GOSUB ADD.NODE.ERROR
+                  ACTION.TYPE = -1
+               END
+*
+               IF ACTION.TYPE # MVHUB_STRING THEN
+                  ERROR.CODE="900"
+                  ERROR.MESSAGE="Action is missing or must be a string"
+                  REPLY.STATUS="500"
+                  GOSUB ADD.ERROR
+               END
+            END
+*
+            IF REPLY.STATUS="200" THEN
+               STATUS = UDOSetProperty(REPLYOBJ, "action",OCONV(ACTION,"MCT"):"Reply")
+               ACTION=UPCASE(ACTION)
+               BEGIN CASE
+                  CASE ACTION="READ"
+                     GOSUB GET.ID.RECORD
+                     IF REPLY.STATUS=200 THEN GOSUB BUILD.REPLY
+                  CASE ACTION="FORMAT"
+                     ERROR.CODE=520
+                     ERROR.MESSAGE="FORMAT is not allowed with this service"
+                     GOSUB ADD.ERROR
+                  CASE ACTION="UPDATE"
+                     GOSUB GET.ID.RECORD
+                     GOSUB APPLY.UPDATE
+                     GOSUB UPDATE.FILE
+                     GOSUB GET.RECORD
+                     GOSUB BUILD.REPLY
+                  CASE ACTION="CREATE"
+                     ERROR.CODE=520
+                     ERROR.MESSAGE="CREATE is not allowed with this service"
+                     GOSUB ADD.ERROR
+                  CASE ACTION="DELETE"
+                  CASE ACTION="QUERY"
+                     GOSUB QUERY.FILE
+                  CASE ACTION="ERROR"    ; * Error Already Handled
+                  CASE 1
+                     ERROR.CODE=500
+                     ERROR.MESSAGE="Unknow Action :":ACTION
+                     GOSUB ADD.ERROR
+               END CASE
+*
+               IF UDOWrite(REPLYOBJ, MVHUB_FORMAT_JSON, REPLY)#MVHUB_SUCCESS THEN
+                  REPLY.STATUS=409
+                  REPLY='{"errors":[{"code": 409,"message":"Unable to render document"}]}'
+               END
+*
+            END
+*
+         CASE 1
+            REPLY.STATUS="405" ; REPLY.TYPE="text/plain"
+            REPLY=METHOD:" not supported"
+      END CASE
+      RELEASE
+      CLOSE FILE
+*
+      RETURN
+*-------------------------------------------------------
+QUERY.FILE:
+*-------------------------------------------------------
+*-------------------------------------------------------
+MAPPED.QUERY:
+*-------------------------------------------------------
+      STATUS = UDOSetProperty(REPLYOBJ, "action",OCONV(ACTION,"MCT"):"Reply")
+      STATUS = UDOCreate(MVHUB_ARRAY,COLUMNARRY)
+      STATUS = UDOSetProperty(REPLYOBJ, "columns",COLUMNARRY)
+*
+      STATUS = UDOCreate(MVHUB_ARRAY,LISTARRY)
+      STATUS = UDOSetProperty(REPLYOBJ, "rows",LISTARRY)
+*
+      SEL.STMT="SELECT ":FILENAME
+      EXECUTE SEL.STMT CAPTURING OUTPUT RTNLIST WORKLIST RETURNING FUNCTION_EXIT_CODE
+      DONE=@FALSE ; QUERY.CNT=0
+      LOOP
+         READNEXT ID FROM WORKLIST ELSE DONE=@TRUE
+      UNTIL DONE DO
+         READ RECORD FROM FILE,ID THEN
+            IF UDOCreate(MVHUB_OBJECT,LISTOBJ)=MVHUB_SUCCESS THEN
+               IF UDOArrayAppendItem(LISTARRY,LISTOBJ)=MVHUB_SUCCESS THEN
+                  STATUS = UDOCreate(MVHUB_OBJECT, KEYOBJ)
+                  STATUS = UDOSetProperty(LISTOBJ, "key",KEYOBJ)
+*
+                  QUERY.CNT+=1
+                  ID.REC=ID
+                  STATUS = UDOCreate(MVHUB_OBJECT, ITEMOBJ)
+                  STATUS = UDOSetProperty(LISTOBJ, "item",ITEMOBJ)
+*
+                  STATUS = UDOSetProperty(REPLYOBJ, "count",QUERY.CNT)
+*
+                  STATUS = UDOSetProperty(REPLYOBJ, "select",SEL.STMT)
+*
+                  STATUS = UDOSetProperty(REPLYOBJ, "title","MVHub for Mvhub Template")
+*
+               END
+            END
+         END
+      REPEAT
+      RETURN
+*-------------------------------------------------------
+GET.ID.RECORD:
+*-------------------------------------------------------
+      ID.REC=""
+      IF UDOGetProperty(INOBJ, "key", KEYOBJ, KEYOBJ.TYPE)#MVHUB_SUCCESS THEN
+         GOSUB ADD.NODE.ERROR
+         KEYOBJ.TYPE = -1
+      END
+*
+      IF KEYOBJ.TYPE # MVHUB_OBJECT THEN
+         ERROR.CODE=400
+         ERROR.MESSAGE="[key is missing or must be a object"
+         GOSUB ADD.ERROR
+         REPLY.STATUS="400"
+      END
+      STATUS = UDOGetProperty(KEYOBJ, "templateId", VALUE, VALUE.TYPE)
+      IF STATUS = MVHUB_ERROR THEN
+         STATUS = UDOGetLastError(ERROR.CODE,ERROR.MESSAGE)
+         ERROR.MESSAGE="[templateId] ":ERROR.MESSAGE
+         GOSUB ADD.ERROR
+         RETURN
+      END
+      IF VALUE.TYPE=MVHUB_STRING OR VALUE.TYPE=MVHUB_NUMBER THEN ID.REC<1> = VALUE
+*
+* Fall Though with ID.REC
+*-------------------------------------------------------
+GET.RECORD:
+*-------------------------------------------------------
+      ID = ID.REC
+      RECORD="" ; WORK.RECORD=""
+*
+      READU RECORD FROM FILE,ID ELSE
+         IF ACTION="READ" THEN
+            REPLY.STATUS=404
+            ERROR.CODE=REPLY.STATUS
+            ERROR.MESSAGE=ID:" not on file (MVHUB.TEMPLATE)"
+            GOSUB ADD.ERROR
+            RETURN
+         END
+         RECORD=""
+      END
+*
+      RETURN
+*-------------------------------------------------------
+APPLY.UPDATE:
+*-------------------------------------------------------
+      ID.REC=ID
+      STATUS = UDOGetProperty(INOBJ, "item", ITEMOBJ, ITEMOBJ.TYPE)
+      IF STATUS = MVHUB_ERROR THEN
+         STATUS = UDOGetLastError(ERROR.CODE,ERROR.MESSAGE)
+         ERROR.MESSAGE="[key] ":ERROR.MESSAGE
+         GOSUB ADD.ERROR
+         RETURN
+      END
+*
+      IF ITEMOBJ.TYPE # MVHUB_OBJECT THEN
+         RERROR.CODE=400
+         ERROR.MESSAGE="[item] is missing or must be a object"
+         GOSUB ADD.ERROR
+         RETURN
+      END
+*
+      IF UDOGetProperty(ITEMOBJ, "description",VALUE,VALUE.TYPE)=MVHUB_SUCCESS THEN
+         RECORD<1>=VALUE
+      END
+*
+      IF UDOGetProperty(ITEMOBJ, "inboundCode",VALUE,VALUE.TYPE)=MVHUB_SUCCESS THEN
+         RECORD<2>=VALUE
+      END
+*
+      IF UDOGetProperty(ITEMOBJ, "outboundCode",VALUE,VALUE.TYPE)=MVHUB_SUCCESS THEN
+         RECORD<3>=VALUE
+      END
+*
+      IF UDOGetProperty(ITEMOBJ, "jsDefault",VALUE,VALUE.TYPE)=MVHUB_SUCCESS THEN
+         RECORD<4>=VALUE
+      END
+*
+*
+      RETURN
+*-------------------------------------------------------
+UPDATE.FILE:
+*-------------------------------------------------------
+      WRITE RECORD ON FILE,ID ON ERROR
+         ERROR.CODE=700
+         ERROR.MESSAGE="Unable to write ":ID
+         GOSUB ADD.ERROR
+      END
+*
+      RETURN
+*-------------------------------------------------------
+BUILD.REPLY:
+*-------------------------------------------------------
+      STATUS = UDOCreate(MVHUB_OBJECT, KEYOBJ)
+      STATUS = UDOSetProperty(REPLYOBJ, "key",KEYOBJ)
+*
+      ID.REC=ID
+      STATUS = UDOCreate(MVHUB_OBJECT, ITEMOBJ)
+      STATUS = UDOSetProperty(REPLYOBJ, "item",ITEMOBJ)
+*
+      IF UDOSetProperty(KEYOBJ, "templateId",ID.REC<1>)#MVHUB_SUCCESS THEN ERROR.PREPEND="[templateId] " ; GOSUB ADD.NODE.ERROR
+      IF UDOSetProperty(ITEMOBJ, "description",RECORD<1>)#MVHUB_SUCCESS THEN ERROR.PREPEND="[description] " ; GOSUB ADD.NODE.ERROR
+      IF UDOSetProperty(ITEMOBJ, "inboundCode",RECORD<2>)#MVHUB_SUCCESS THEN ERROR.PREPEND="[inboundCode] " ; GOSUB ADD.NODE.ERROR
+      IF UDOSetProperty(ITEMOBJ, "outboundCode",RECORD<3>)#MVHUB_SUCCESS THEN ERROR.PREPEND="[outboundCode] " ; GOSUB ADD.NODE.ERROR
+      IF UDOSetProperty(ITEMOBJ, "jsDefault",RECORD<4>)#MVHUB_SUCCESS THEN ERROR.PREPEND="[jsDefault] " ; GOSUB ADD.NODE.ERROR
+*
+      RETURN
